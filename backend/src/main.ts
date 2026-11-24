@@ -1,3 +1,8 @@
+// Size libuv's threadpool above DB poolMax before any blocking msnodesqlv8 ODBC work starts.
+if (!process.env.UV_THREADPOOL_SIZE) {
+  process.env.UV_THREADPOOL_SIZE = '32';
+}
+
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
