@@ -57,8 +57,11 @@ Chốt trước: **Q-01** (data access), **Q-13** (stack: `backend/` đang dùng
 - [x] FE API clients & nối UI MH.09, MH.13, MH.14 (`StaffStats.tsx`, `OwnerReports.tsx`, `Reconciliation.tsx`). *(25/11/2026)*
 - DoD: số liệu khớp tính tay trên bộ seed (ca "Doanh thu"). *(Đạt 25/11/2026 — 11/11 integration)*
 
-## M9 — Cứng hóa
-Rate limit, cấu hình Nginx, PM2, log, sao lưu DB, kiểm tra bảo mật (OWASP cơ bản), test tải tạo đơn đồng thời.
+## M9 — Cứng hóa *(Hoàn tất 25/11/2026)*
+- [x] Rate limit `auth/login` & `auth/register` (`10 req/phút/IP` → `429 TOO_MANY_REQUESTS` + `Retry-After`) & OWASP security headers (`rate-limit.middleware.ts`, `security-headers.middleware.ts`, `main.ts`) · kiểm thử unit bảo mật (4/4). *(25/11/2026)*
+- [x] Cấu hình triển khai `deploy/nginx.conf` (SPA, `/api/v1`, `/socket.io`, TLS, rate limit, allowlist IP SePay), PM2 `ecosystem.config.cjs` (1 instance `TZ=Asia/Ho_Chi_Minh`, `UV_THREADPOOL_SIZE=32`), script sao lưu/khôi phục SQL Server (`database/scripts/backup.ps1`, `restore.ps1`) & runbook `deploy/README.md`. *(25/11/2026)*
+- [x] Kiểm thử tải đồng thời (`concurrency.int.test.ts`): tranh chấp slot (15 req → 1x `201`, 14x `409 SLOT_TAKEN`), tranh chấp mã KM `MaxUses=1` (8 req → 1x `201`, 7x `409 PROMO_EXHAUSTED`, `UsedCount=1`), đua hủy đơn `RowVer` (5 req → 1x `200`, 4x `409/422`) · nâng `poolMax = 20` · rà soát 12 bất biến & kiểm tra toàn repo (`51/51` unit + `85/85` integration xanh). *(25/11/2026)*
+- DoD: toàn bộ 73 API + webhook + 12 màn hình FE + build/lint/typecheck/unit/integration tests xanh 100%. *(Đạt 25/11/2026)*
 
 ---
 
