@@ -12,13 +12,13 @@ Xem chi tiết quy trình tại [`../docs/02-quy-trinh-e2e-test-playwright.md`](
 cd d:\Jobs\Sports\e2e
 npm install
 
-# 1. Chạy toàn bộ 13 kịch bản hoàn chỉnh trên Prototype hiện tại (+ báo cáo 28 mục SRS gap)
+# 1. Chạy toàn bộ 41 kịch bản (13 kịch bản hoàn chỉnh + 28 kịch bản SRS — mặc định `IS_SRS_FULL = true` trong `fixtures/srs.ts`)
 npm test
 
 # 2. Chỉ chạy 13 kịch bản hoàn chỉnh xuyên suốt (01..04)
 npm run test:journeys
 
-# 3. Chạy kiểm định toàn bộ 41 kịch bản SRS (kể cả 28 mục chưa đạt trên Prototype)
+# 3. Chạy kiểm định toàn bộ 41 kịch bản SRS với cờ SRS_FULL=1 tường minh
 npm run test:srs-audit
 
 # 4. Chạy có giao diện trình duyệt trực quan để quan sát luồng chạy

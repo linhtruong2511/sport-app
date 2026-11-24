@@ -1,4 +1,4 @@
-# apps/web — React SPA SportHub
+# app — React SPA SportHub
 
 Đọc kèm: `docs/api-conventions.md` (envelope, lỗi, allowedActions), `docs/business-rules.md` (để hiểu, **không** để tính lại).
 
@@ -6,8 +6,8 @@
 
 Frontend **không tính** giá, khuyến mãi, cọc, tiền hoàn, ô trống, KPI, doanh thu, trạng thái được phép. Mọi con số và
 nút thao tác lấy từ API (`/bookings/quote`, `/availability`, `/cancel-preview`, `allowedActions`, `/dashboard/daily`…).
-Prototype cũ có `slotsFor()`, `evalPromo()`, `depositFor()`, `calculateRefund()`, `computeDailyStats()`,
-`computeRevenueReport()` — **không port** các hàm này; thay bằng gọi API tương ứng.
+Prototype hiện tại trong `app/src/domain/` (`slots.ts`, `pricing.ts`, `refund.ts`, `reports.ts`, `affected.ts`) chỉ phục vụ
+chạy độc lập không backend — khi nối API, không port logic tính toán này lên FE; thay bằng gọi API tương ứng.
 
 ## Route và màn hình
 
@@ -16,7 +16,7 @@ Prototype cũ có `slotsFor()`, `evalPromo()`, `depositFor()`, `calculateRefund(
 | `/login` | MH.01 Đăng nhập · MH.03 Đăng ký (tab) | PUBLIC | — |
 | `/` | MH.02 Trang chủ | PUBLIC | CustomerLayout |
 | `/booking` | MH.04 Đặt sân online (`?branchId&sportId&date&promo`) | PUBLIC; giữ chỗ cần CUSTOMER | CustomerLayout |
-| `/payment/:bookingCode` | MH.05 Thanh toán | CUSTOMER | CustomerLayout |
+| `/payment/:bookingCode` *(prototype hiện dùng `/payment/:id`)* | MH.05 Thanh toán | CUSTOMER | CustomerLayout |
 | `/my-bookings` | MH.06 Lịch đặt + thông báo (cột phải) | CUSTOMER | CustomerLayout |
 | `/staff/booking` | MH.07 Đặt sân tại quầy | STAFF, OWNER | StaffLayout |
 | `/staff/orders` | MH.08 Quản lý đơn & nhận sân (`?q=`) | STAFF, OWNER | StaffLayout |
@@ -67,15 +67,18 @@ Sau đăng nhập: CUSTOMER → `/` (hoặc trang trước đó), STAFF → `/st
 - Enum → nhãn tiếng Việt và màu trạng thái lấy từ `@sporthub/shared` (một nguồn duy nhất).
 - Nút thao tác trên đơn hiện/ẩn theo `allowedActions`, không theo `status` tự suy.
 - Bộ chọn chi nhánh: STAFF cố định theo `user.branchId` (ẩn hoặc disabled); OWNER chọn được, có "Tất cả" ở MH.09/MH.13.
-- Design token (màu, chữ, khoảng cách, bo góc) lấy từ Figma, khai báo một lần ở `src/styles/tokens.css`; component không
+- Design token (màu, chữ, khoảng cách, bo góc) lấy từ Figma, khai báo một lần ở `src/index.css`; component không
   hard-code mã màu.
 - QR vẽ bằng `qrcode.react` từ `qrPayload`; có nút "Sao chép STK" và hiển thị nội dung chuyển khoản.
 - Trạng thái rỗng, đang tải, lỗi có ở mọi danh sách; câu chữ theo SRS (vd. "Bạn chưa có lịch đặt sân nào").
-- Không đưa các công cụ demo của prototype vào bản build (đăng nhập nhanh, khôi phục dữ liệu mẫu, mô phỏng chuyển sai).
+- Không đưa các công cụ demo của prototype vào bản build production sau khi nối API (đăng nhập nhanh, khôi phục dữ liệu mẫu, mô phỏng chuyển sai).
 
 ## Lệnh
 
 ```bash
-npm run dev     # Vite :5173, proxy /api và /socket.io → :4000
-npm test        # Vitest + Testing Library
+npm run dev     # Vite :5173 (cần cấu hình proxy /api và /socket.io → backend :3000 trong vite.config.ts khi nối API)
+npm run lint    # oxlint
+npm run build   # tsc -b && vite build
 ```
+
+Bộ test E2E UI hiện chạy tại `e2e/` (`npm test`). Unit test Vitest + Testing Library chưa cấu hình trong `app/package.json`.

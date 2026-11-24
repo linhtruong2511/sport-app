@@ -10,9 +10,9 @@ Hệ thống ngoài: **SePay** (webhook báo có chuyển khoản), Email/SMS/Za
 ## Nguồn sự thật — thứ tự ưu tiên khi mâu thuẫn
 
 1. `docs/decisions.md` — mâu thuẫn đã chốt (R-xx) và câu hỏi còn mở (Q-xx). **Đọc trước khi động vào đặt sân, thanh toán, hủy, báo cáo.**
-2. `docs/specs/SRS.md` — yêu cầu nghiệp vụ (*cái gì*). Đoạn ghi "Bổ sung ngày …" ghi đè phần cũ.
-3. `docs/specs/SDD.md` — thiết kế (*làm thế nào*): kiến trúc, CSDL, 73 API, webhook, socket.
-4. `database/sporthub_init.sql` — tên bảng/cột/ràng buộc **chính xác**. Code khớp script, không khớp chữ trong SDD
+2. `docs/SRS.md` — yêu cầu nghiệp vụ (*cái gì*). Đoạn ghi "Bổ sung ngày …" ghi đè phần cũ.
+3. `docs/SDD.md` — thiết kế (*làm thế nào*): kiến trúc, CSDL, 73 API, webhook, socket.
+4. `database/sporthub_init.sql` *(dự kiến tạo ở M0, hiện chưa có trong repo)* — tên bảng/cột/ràng buộc **chính xác**. Code khớp script, không khớp chữ trong SDD
    (vd. bảng `PaymentRequest` số ít, cột `Channel`, `CreatedAt`, `MaxDiscountAmount`).
 
 Bản tóm tắt dùng hằng ngày:
@@ -28,39 +28,55 @@ Gặp mâu thuẫn **chưa có** trong `decisions.md`: dừng lại, hỏi ngư�
 
 | Tầng | Công nghệ | Nguồn |
 | --- | --- | --- |
-| Backend | Node.js LTS + **TypeScript**, Express, Socket.IO, node-cron, PM2 | SDD 2.x (TS/Express: đề xuất – Q-13) |
+| Backend | Node.js LTS + **TypeScript**, **NestJS 12** (`backend/`), `mssql`/`msnodesqlv8`, Socket.IO, node-cron, PM2 | SDD 2.x (chuyển NestJS trong `backend/`) |
 | Validation | zod (schema dùng chung cho route) | đề xuất – Q-13 |
 | CSDL | SQL Server 2016 SP1+ (script dùng `CREATE OR ALTER`, filtered index, `ROWVERSION`) | SDD 3 |
 | Data access | Xem **Q-01** (Prisma coi `DATETIME2` là UTC → lệch 7 giờ nếu dùng ngây thơ) | SDD 2.3 |
-| Frontend | React SPA + Vite + TypeScript, React Router, TanStack Query, socket.io-client, `qrcode.react` | SDD 4, 2.6 (Vite/TanStack: đề xuất) |
+| Frontend | React 19 + Vite 8 + TypeScript, React Router 7, CSS thuần + `oxlint` (`app/`); hướng API thêm TanStack Query, `socket.io-client`, `qrcode.react` | SDD 4, 2.6 |
 | Hạ tầng | Nginx (reverse proxy, HTTPS, rate limit, IP allowlist webhook), PM2 | SDD 2.2 |
-| Test | Vitest (unit), integration test chạy trên SQL Server thật (Docker) | đề xuất |
+| Test | Playwright UI E2E (`e2e/`); Vitest (unit) + integration test SQL Server (dự kiến từ M0) | đề xuất |
 
-## Cấu trúc repo (đích)
+## Cấu trúc repo
 
 ```
-apps/api/          Backend modular monolith — xem apps/api/CLAUDE.md
-apps/web/          React SPA — xem apps/web/CLAUDE.md
-packages/shared/   Enum, nhãn tiếng Việt, kiểu DTO, zod schema dùng chung FE/BE
-database/          sporthub_init.sql + migrations/ — xem database/CLAUDE.md
-docs/              Tài liệu ràng buộc; docs/specs/ chứa SRS.md, SDD.md
+app/               React SPA (hiện đang chạy prototype) — xem app/CLAUDE.md, app/README.md
+backend/           Backend NestJS 12 (SQL Server) — xem backend/CLAUDE.md, backend/README.md
+e2e/               Bộ kiểm thử UI E2E Playwright — xem e2e/README.md
+docs/              Tài liệu ràng buộc, SRS.md, SDD.md, images/, specs/README.md
 .claude/           settings.json + slash command (/implement-api, /new-module, /review-rules)
+packages/shared/   (dự kiến ở M0) Enum, nhãn tiếng Việt, kiểu DTO, zod schema dùng chung FE/BE
+database/          (dự kiến ở M0) sporthub_init.sql + migrations/
 ```
 
-## Lệnh (tạo ở giai đoạn M0 – roadmap)
+## Lệnh
+
+Hiện tại repo chưa thiết lập npm workspaces ở thư mục gốc; chạy lệnh trong từng thư mục tương ứng:
+
+```bash
+# Frontend prototype (app/)
+cd app && npm install && npm run dev    # Vite :5173
+cd app && npm run lint && npm run build # oxlint + tsc -b && vite build
+
+# Backend NestJS (backend/)
+cd backend && npm install && npm run db:test  # kiểm tra kết nối SQL Server theo backend/.env
+cd backend && npm run dev                     # NestJS watch (:3000 theo .env.example)
+
+# E2E UI Playwright (e2e/)
+cd e2e && npm install && npm test             # chạy kiểm thử giao diện prototype
+```
+
+Lệnh mục tiêu khi hoàn tất cấu hình workspace ở giai đoạn M0 (`docs/roadmap.md`):
 
 ```bash
 docker compose up -d mssql          # SQL Server dev (cổng 1433)
 npm run db:reset                    # chạy database/sporthub_init.sql — XÓA SẠCH DB dev rồi seed lại
-npm install
-npm run dev                         # api (:4000) + web (:5173)
 npm run lint && npm run typecheck   # bắt buộc xanh trước khi báo xong
 npm test                            # unit test toàn repo
-npm run test:int -w apps/api        # integration test cần DB đang chạy
+npm run test:int -w backend         # integration test cần DB đang chạy
 ```
 
-Tài khoản seed: Chủ sân `0900000001` / `Owner@123`; nhân viên `0933445577` / `Nv123456` (CS01);
-khách `0987654321` / `An123456`. Chỉ dùng cho dev.
+Tài khoản seed prototype (`app/src/data.ts`): Chủ sân `0900000001` / `Chu123456`; nhân viên CS01 `0933445566` / `Nv123456`;
+khách `0987654321` (hoặc `0912345678`) / `Matkhau123`. Chỉ dùng cho dev.
 
 ## Bất biến — không được phá
 
@@ -86,12 +102,12 @@ Chi tiết và nguồn ở `docs/business-rules.md`. Code vi phạm một trong 
 
 ## Quy ước code
 
-- Backend 4 lớp **route → controller → service → repository**; lớp trên chỉ gọi lớp ngay dưới; module khác chỉ gọi
+- Backend 4 lớp **route/guard → controller → service → repository** (NestJS module trong `backend/src/`); lớp trên chỉ gọi lớp ngay dưới; module khác chỉ gọi
   qua **service** của module đó, không chạm repository của nhau.
 - Định danh code bằng tiếng Anh. Thông báo lỗi hiển thị cho người dùng bằng tiếng Việt, **đúng câu chữ** trong đặc tả API
   của SDD (không có thì lấy SRS). Enum giữ mã tiếng Anh viết hoa như CSDL; JSON dùng camelCase.
 - Ghi nguồn nghiệp vụ trong comment ở chỗ có quy tắc không hiển nhiên: `// UC 009-1c`, `// SDD 3.5e`, `// API-18`.
-- Enum + nhãn tiếng Việt chỉ định nghĩa một lần trong `packages/shared`.
+- Enum + nhãn tiếng Việt chỉ định nghĩa một lần trong `packages/shared` (khi tách workspace ở M0).
 - Không thêm thư viện mới khi chưa nói lý do; ưu tiên thứ đã có trong stack.
 
 ## Cách làm việc

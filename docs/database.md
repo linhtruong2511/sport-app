@@ -2,7 +2,7 @@
 
 ## 1. Nguồn sự thật
 
-- `database/sporthub_init.sql` là schema chuẩn: 26 bảng, CHECK, filtered index, `dbo.usp_NextCode`, seed.
+- `database/sporthub_init.sql` *(dự kiến tạo ở M0; hiện `backend/` kết nối tới database `SportApp` qua `backend/src/config/database.ts` và `backend/.env`)* là schema chuẩn: 26 bảng, CHECK, filtered index, `dbo.usp_NextCode`, seed.
 - Tên trong code khớp script, kể cả chỗ SDD viết khác (R-02):
 
 | SDD ghi | Script / code dùng |
@@ -37,7 +37,7 @@
 - Toàn bộ `DATETIME2` lưu giờ VN. Process Node chạy `TZ=Asia/Ho_Chi_Minh`.
 - Driver `mssql`/tedious: đặt `options.useUTC = false` để Date JS ↔ DATETIME2 không bị dịch 7 giờ.
 - Prisma mặc định coi `DATETIME2` là UTC → nếu chọn Prisma phải qua lớp chuyển đổi (Q-01).
-- Chỉ dùng helper trong `core/time.ts` để: lấy `now` (qua `Clock`), cộng phút, tách ngày/giờ, format ISO `+07:00`,
+- Chỉ dùng helper trong `backend/src/core/time.ts` *(dự kiến)* để: lấy `now` (qua `Clock`), cộng phút, tách ngày/giờ, format ISO `+07:00`,
   tính thứ trong tuần theo quy ước 1 = Thứ 2 … 7 = CN (khác `Date.getDay()` 0 = CN).
 - So sánh mốc thời gian nghiệp vụ trong SQL dùng tham số `@now` truyền từ app (để test được), không dùng `SYSDATETIME()`
   trong câu nghiệp vụ. `SYSDATETIME()` chỉ dùng cho DEFAULT `CreatedAt`.

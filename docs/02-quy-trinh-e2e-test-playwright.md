@@ -1,7 +1,7 @@
 # QUY TRÌNH & BỘ KIỂM THỬ UI E2E BẰNG PLAYWRIGHT CHO PROTOTYPE SPORTHUB (THEO SRS)
 
 - **Phạm vi kiểm thử:** **100% kiểm thử giao diện Prototype (`app/`)** chạy trực tiếp trên trình duyệt Chromium (không phụ thuộc Backend API hay CSDL).
-- **Tài liệu chuẩn hóa:** `Documentation/SRS.docx` (UC 001 – UC 026) & `Documentation/Thiết kế chi tiết (final).docx` (Mục 5.7–5.9).
+- **Tài liệu chuẩn hóa:** `docs/SRS.md` (UC 001 – UC 026) & `docs/SDD.md` (Mục 5.7–5.9).
 - **Mã nguồn Playwright:** Thư mục `e2e/` (`playwright.config.ts`, `fixtures/`, `tests/01..05*.spec.ts`).
 
 ---
@@ -10,8 +10,8 @@
 
 | Chế độ chạy | Lệnh thực thi (`cd e2e`) | Mục đích & Kết quả mong đợi |
 | --- | --- | --- |
-| **Chế độ 1 — Chạy Kịch bản Hoàn chỉnh (Baseline UI Journeys)** | `npm test` *(hoặc `npm run test:journeys`)* | Chạy **13 kịch bản liên hoàn xuyên suốt đa màn hình & đa vai trò** (`UI-J01` – `UI-J13`) trên prototype hiện tại (**13/13 PASS**), đồng thời báo cáo rõ **28 hạng mục SRS còn thiếu/sai (`SRS-UI-01` – `SRS-UI-28`)** ở trạng thái `fixme`. |
-| **Chế độ 2 — Nghiệm thu toàn bộ SRS trên UI (`SRS_FULL=1`)** | `npm run test:srs-audit` | Chạy **TẤT CẢ 41 kịch bản UI** (13 kịch bản hoàn chỉnh + 28 kịch bản nghiệm thu SRS) để kiểm chứng trực tiếp từng nghiệp vụ sau khi sửa giao diện prototype (mục tiêu sau sửa đổi: **41/41 PASS, 0 skipped**). |
+| **Chế độ 1 — Chạy Kịch bản Hoàn chỉnh (Baseline UI Journeys)** | `npm run test:journeys` *(hoặc đặt `SRS_FULL=0` khi chạy `npm test`)* | Chạy **13 kịch bản liên hoàn xuyên suốt đa màn hình & đa vai trò** (`UI-J01` – `UI-J13`) trên prototype (**13/13 PASS**), và đánh dấu `fixme` cho **28 hạng mục SRS (`SRS-UI-01` – `SRS-UI-28`)** nếu bật `SRS_FULL=0`. |
+| **Chế độ 2 — Nghiệm thu toàn bộ SRS trên UI (`SRS_FULL=1`, mặc định hiện tại)** | `npm test` *hoặc* `npm run test:srs-audit` | Chạy **TẤT CẢ 41 kịch bản UI** (13 kịch bản hoàn chỉnh + 28 kịch bản nghiệm thu SRS) trực tiếp trên prototype (trong `e2e/fixtures/srs.ts`, `IS_SRS_FULL` hiện mặc định là `true`). |
 
 ---
 
@@ -19,10 +19,12 @@
 
 ```text
 e2e/
-├── package.json                                 # test, test:journeys, test:srs-audit, test:smoke, test:headed, report
+├── README.md                                    # Hướng dẫn chạy nhanh
+├── package.json                                 # test, test:journeys, test:srs-audit, test:srs, test:smoke, test:headed, report
+├── tsconfig.json
 ├── playwright.config.ts                         # Tự khởi chạy Vite dev server http://localhost:5173, lưu trace/video/screenshot
 ├── fixtures/
-│   ├── srs.ts                                   # Wrapper `srsUiGap()` bật/tắt bằng cờ SRS_FULL=1
+│   ├── srs.ts                                   # Wrapper `srsUiGap()` bật/tắt bằng cờ SRS_FULL (mặc định chạy toàn bộ)
 │   ├── auth.fixture.ts                          # Helper đăng nhập / đăng xuất đa vai trò (hỗ trợ giữ SPA state)
 │   └── test-data.ts                             # Tài khoản mẫu, ngày demo, mã đơn seed, mã khuyến mãi
 └── tests/
@@ -30,7 +32,7 @@ e2e/
     ├── 02-customer-complete-journey.spec.ts     # UI-J05..J07: Hành trình hoàn chỉnh Khách hàng (Home -> Đặt -> KM -> QR -> Lịch -> Hủy)
     ├── 03-staff-pos-complete-journey.spec.ts    # UI-J08..J10: Hành trình hoàn chỉnh Nhân viên POS (Quầy -> Tất toán -> Bàn giao -> Dashboard)
     ├── 04-owner-admin-complete-journey.spec.ts  # UI-J11..J13: Hành trình hoàn chỉnh Chủ sân liên thông đa vai trò (NV -> Sân -> Bảo trì/Nghỉ lễ -> KM -> Báo cáo)
-    └── 05-srs-ui-compliance-gaps.spec.ts        # SRS-UI-01..28: 28 kịch bản nghiệm thu nghiệp vụ SRS còn thiếu/sai trên UI (UI-01..UI-34)
+    └── 05-srs-ui-compliance-gaps.spec.ts        # SRS-UI-01..28: 28 kịch bản nghiệm thu nghiệp vụ SRS trên UI (UI-01..UI-34)
 ```
 
 ---

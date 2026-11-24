@@ -260,7 +260,7 @@ Thực thu(kỳ) = Σ Payments.Amount có PaidAt trong kỳ
 - Khóa NV / đổi cơ sở NV / đặt lại mật khẩu → `TokenVersion + 1`, thu hồi mọi refresh token, socket `auth.revoked`.
   Middleware so `tv` với DB → `401 TOKEN_REVOKED`. Lịch sử đơn và phiếu thu của NV giữ nguyên.
 
-**Validation dùng chung** (zod trong `packages/shared`, BE kiểm lại toàn bộ):
+**Validation dùng chung** (zod trong `packages/shared` khi tách workspace ở M0, BE kiểm lại toàn bộ):
 
 | Trường | Quy tắc |
 | --- | --- |

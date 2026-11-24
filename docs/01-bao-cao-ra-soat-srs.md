@@ -1,12 +1,11 @@
 # BÁO CÁO RÀ SOÁT GIAO DIỆN PROTOTYPE SO VỚI SRS & THIẾT KẾ CHI TIẾT
 
 - **Dự án:** Hệ thống Quản lý và Đặt lịch Sân thể thao (**SportHub**)
-- **Phạm vi rà soát:** **Chỉ rà soát phần giao diện Prototype (`app/`)** — chưa tính Backend API và CSDL SQL Server (dữ liệu mô phỏng trong `app/src/data.ts`, `app/src/store.tsx`).
+- **Phạm vi rà soát:** **Chỉ rà soát phần giao diện Prototype (`app/`)** tại thời điểm trước khi triển khai `docs/03-ke-hoach-sua-doi-trien-khai.md` — chưa tính Backend API và CSDL SQL Server (dữ liệu mô phỏng trong `app/src/data.ts`, `app/src/store.tsx`).
 - **Tiêu chí đánh giá:** Giao diện prototype phải **thể hiện và vận hành đầy đủ toàn bộ các nghiệp vụ, màn hình, trường nhập, ràng buộc kiểm tra, luồng trạng thái và báo cáo** đã nêu trong tài liệu SRS.
 - **Tài liệu đối chiếu:**
-  1. `Documentation/SRS.docx` *(chuẩn nghiệp vụ: 19 FR, 24 UC: UC 001 – UC 023, UC 026 + tham chiếu UC 025)*
-  2. `Documentation/Thiết kế chi tiết (final).docx` *(ngày 19/11/2026: Mục 1.5 Quyết định D1–D11, Mục 5.7 Thiết kế 11 màn hình Figma & Mục 5.9 Thành phần bổ sung chưa có trong Figma)*
-  3. `Documentation/Màn hình theo vai trò.txt`
+  1. `docs/SRS.md` *(chuẩn nghiệp vụ: 19 FR, 24 UC: UC 001 – UC 023, UC 026 + tham chiếu UC 025)*
+  2. `docs/SDD.md` *(Mục 1.5 Quyết định đã chốt, Mục 5.7 Thiết kế 11 màn hình Figma & Mục 5.9 Thành phần bổ sung chưa có trong Figma; bản `.docx` gốc trước đây ở `Documentation/`)*
 
 ---
 
@@ -14,11 +13,11 @@
 
 | Chỉ tiêu | Hiện trạng trên Prototype `app/` |
 | --- | --- |
-| **Số màn hình hiện có** | **11 trang** (`Login`, `Home`, `Booking`, `Payment`, `MyBookings`, `StaffBooking`, `StaffOrders`, `StaffStats`, `OwnerStaff`, `OwnerCourts`, `OwnerReports`) khớp bố cục 11 màn hình Figma trong `Thiết kế chi tiết (final).docx`. |
+| **Số màn hình hiện có** | **11 trang** (`Login`, `Home`, `Booking`, `Payment`, `MyBookings`, `StaffBooking`, `StaffOrders`, `StaffStats`, `OwnerStaff`, `OwnerCourts`, `OwnerReports`) khớp bố cục 11 màn hình Figma trong `docs/SDD.md`. |
 | **Build & Static Lint** | `npm run build` (`tsc -b && vite build`) **thành công (0 lỗi)**; `npm run lint` (`oxlint`) còn **9 cảnh báo** (`purity`, `immutability`, `only-export-components`). |
-| **Mức độ phủ nghiệp vụ SRS trên UI** | **~58%** — Khung giao diện và các luồng chính (happy path) đã chạy được mượt mà; tuy nhiên còn **34 sai lệch/thiếu sót nghiệp vụ UI (`UI-01` – `UI-34`)** so với `SRS.docx` & Mục 5.9 của `Thiết kế chi tiết (final).docx`. |
+| **Mức độ phủ nghiệp vụ SRS trên UI** | **~58%** — Khung giao diện và các luồng chính (happy path) đã chạy được mượt mà; tuy nhiên còn **34 sai lệch/thiếu sót nghiệp vụ UI (`UI-01` – `UI-34`)** so với `docs/SRS.md` & Mục 5.9 của `docs/SDD.md`. |
 
-### Các điểm đã được chốt trong `Thiết kế chi tiết (final).docx` (Mục 1.5) áp dụng cho Prototype
+### Các điểm đã được chốt trong `docs/SDD.md` (Mục 1.5) áp dụng cho Prototype
 - **D1:** Hủy đơn áp dụng chính sách hoàn tiền bậc thang (**>= 5 ngày: 100%, 2 đến <5 ngày: 50%, <2 ngày / no-show: 0%**) trên phần tiền đã trả *ngoài tiền cọc*; tiền cọc luôn bị giữ.
 - **D2 & D3:** Thời hạn giữ chỗ `HOLD_MINUTES = 10` phút; ngưỡng quá giờ nhận sân `NO_SHOW_GRACE_MINUTES = 30` phút.
 - **D6:** Hình thức thanh toán mặc định ở màn Đặt sân phải là **Thanh toán 100% (`FULL`)** theo SRS (prototype hiện đang chọn sẵn Đặt cọc 30%).

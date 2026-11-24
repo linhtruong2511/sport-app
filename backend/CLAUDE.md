@@ -1,25 +1,37 @@
-# apps/api — Backend SportHub
+# backend — Backend SportHub (NestJS 12 + TypeScript + SQL Server)
 
-Đọc kèm: `docs/architecture.md`, `docs/business-rules.md`, `docs/api-conventions.md`, `docs/database.md`.
+Đọc kèm: `backend/README.md`, `docs/architecture.md`, `docs/business-rules.md`, `docs/api-conventions.md`, `docs/database.md`.
 
 ## Cấu trúc
+
+Hiện có (NestJS 12, xem `backend/README.md`):
+
+```
+src/
+  common/          all-exceptions.filter.ts
+  config/          env.ts, database.ts
+  database/        database.module.ts, database.service.ts
+  health/          health.controller.ts, health.module.ts
+  scripts/         testDb.ts
+  app.module.ts, main.ts
+```
+
+Cấu trúc đích khi triển khai các module nghiệp vụ:
 
 ```
 src/
   core/            db, transaction, errors, http envelope, auth, branchScope, idempotency,
                    settings, clock, time, money, codes, realtime, logger
-  modules/
-    <module>/
-      <module>.routes.ts       path + middleware + zod schema
-      <module>.controller.ts   req → service → envelope
-      <module>.service.ts      nghiệp vụ, transaction, sự kiện
-      <module>.repository.ts   SQL
-      <module>.mapper.ts       hàng CSDL → DTO (camelCase, ISO +07:00)
-      <module>.schemas.ts      zod (import validator chung từ @sporthub/shared)
-      __tests__/
+  <module>/        (hoặc modules/<module>/)
+    <module>.module.ts       module NestJS
+    <module>.controller.ts   route + guard + pipe zod → service → envelope
+    <module>.service.ts      nghiệp vụ, transaction, sự kiện
+    <module>.repository.ts   SQL
+    <module>.mapper.ts       hàng CSDL → DTO (camelCase, ISO +07:00)
+    <module>.schemas.ts      zod (import validator chung từ @sporthub/shared)
+    __tests__/
   jobs/            đăng ký cron, gọi service
   integrations/    sepay (BankGateway), notifier (OutboundNotifier stub)
-  app.ts, server.ts
 ```
 
 Tạo module mới bằng `/new-module <tên>`.
@@ -67,13 +79,16 @@ Tạo module mới bằng `/new-module <tên>`.
 - Unit (`*.test.ts`): hàm thuần trong `pricing`, `money`, `time`, máy trạng thái, mapper. Không chạm DB.
 - Integration (`*.int.test.ts`): chạy trên SQL Server Docker, mỗi test trong transaction rollback hoặc DB tạo mới từ
   `sporthub_init.sql` với `@SeedSample = 0` + fixture riêng. Có test song song cho `SLOT_TAKEN`, `PROMO_EXHAUSTED`.
-- Test HTTP dùng supertest qua `app` (không mở cổng thật). Mock SePay bằng `FakeBankGateway`.
+- Test HTTP dùng supertest qua Nest `INestApplication` (không mở cổng thật). Mock SePay bằng `FakeBankGateway`.
 - Đặt tên test theo quy tắc: `it('hủy trước đúng 5 ngày → hoàn 100% (FR 12)')`.
 
 ## Lệnh
 
 ```bash
-npm run dev          # tsx watch, cổng 4000
-npm test             # unit
-npm run test:int     # integration (cần docker compose up -d mssql + db:reset)
+npm run db:test      # kiểm tra kết nối SQL Server theo backend/.env
+npm run dev          # nest start --watch (cổng mặc định 3000 theo .env.example)
+npm run build        # nest build
+npm start            # node dist/main.js
 ```
+
+*(Script `npm test` và `npm run test:int` cho unit/integration test sẽ bổ sung vào `backend/package.json` ở M0.)*

@@ -31,7 +31,7 @@ Chỉ lớp Data access được chạm CSDL. Không có service nào khác ngo�
 | `admin` | Nhân viên, sân, bảng giá, giờ mở cửa, ngày nghỉ, khóa sân, đơn bị ảnh hưởng | 36–39, 42–58 |
 | `jobs` | Tác vụ nền (mục 7) — chỉ gọi service, không chứa nghiệp vụ riêng | — |
 
-Dùng chung (`apps/api/src/core`): `db` (pool, transaction), `errors`, `http` (envelope), `auth` middleware, `branchScope`,
+Dùng chung (`backend/src/core` — dự kiến; hiện `backend/src/` đang dùng NestJS 12 với `common/`, `config/`, `database/`, `health/`, `scripts/`): `db` (pool, transaction), `errors`, `http` (envelope), `auth` guard/middleware, `branchScope`,
 `idempotency`, `settings`, `clock`, `money`, `time`, `realtime` (emitter), `codes` (usp_NextCode), `logger`.
 
 ## 3. Lớp trong module

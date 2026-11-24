@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Nâng cấp toàn diện giao diện Prototype React (`app/`) — chưa cần Backend — để đáp ứng **100% các nghiệp vụ, ràng buộc dữ liệu, luồng trạng thái, công thức tính toán và thành phần bổ sung** trong `SRS.docx` và `Thiết kế chi tiết (final).docx`, đồng thời đạt **100% PASS trên toàn bộ bộ kiểm thử UI Playwright (`e2e/` với cờ `SRS_FULL=1`)** và **0 cảnh báo `oxlint`**.
+**Goal:** Nâng cấp toàn diện giao diện Prototype React (`app/`) — chưa cần Backend — để đáp ứng **100% các nghiệp vụ, ràng buộc dữ liệu, luồng trạng thái, công thức tính toán và thành phần bổ sung** trong `docs/SRS.md` và `docs/SDD.md`, đồng thời đạt **100% PASS trên toàn bộ bộ kiểm thử UI Playwright (`e2e/`)** và **0 cảnh báo `oxlint`**.
 
-**Architecture:** Giữ nguyên kiến trúc 11 màn hình chuẩn Figma + bổ sung các modal/tab/view theo Mục 5.9 của `Thiết kế chi tiết (final).docx`. Chuẩn hóa lớp dữ liệu mô phỏng client-side trong `app/src/store.tsx` (lưu bền vững vào `localStorage` kèm nút/hàm reset demo để giữ trạng thái qua điều hướng và reload), tách các hàm nghiệp vụ thuần (`domain/refund.ts`, `domain/slots.ts`, `domain/pricing.ts`, `domain/reports.ts`) để sau này thay bằng API Backend mà không phải viết lại giao diện.
+**Architecture:** Giữ nguyên kiến trúc 11 màn hình chuẩn Figma + bổ sung các modal/tab/view theo Mục 5.9 của `docs/SDD.md`. Chuẩn hóa lớp dữ liệu mô phỏng client-side trong `app/src/store.tsx` (lưu bền vững vào `localStorage` kèm nút/hàm reset demo để giữ trạng thái qua điều hướng và reload), tách các hàm nghiệp vụ thuần (`domain/affected.ts`, `domain/pricing.ts`, `domain/refund.ts`, `domain/slots.ts`, `domain/reports.ts`) để sau này thay bằng API Backend mà không phải viết lại giao diện.
 
 **Tech Stack:** React 19.3, TypeScript 7, React Router 7, Vite 8, CSS thuần (Figma design tokens trong `app/src/index.css`), `oxlint`, Playwright UI E2E (`e2e/`).
 
 ---
 
-## Global Constraints (Bắt buộc tuân thủ trong mọi Task — từ `SRS.docx` & `Thiết kế chi tiết (final).docx`)
+## Global Constraints (Bắt buộc tuân thủ trong mọi Task — từ `docs/SRS.md` & `docs/SDD.md`)
 
 1. **Phạm vi Prototype (No Backend):** Mọi dữ liệu (`users`, `branches`, `openingHours`, `holidays`, `courts`, `locks`, `promos`, `bookings`, `transactions`, `reconciliations`, `notifications`, `reassignLogs`) được quản lý đồng bộ qua `AppProvider` (`app/src/store.tsx`) và đồng bộ `localStorage` (có tiện ích reset dữ liệu mẫu).
 2. **Vòng đời đơn 6 trạng thái:** `pending` (*Chờ thanh toán*), `confirmed` (*Đã xác nhận*), `playing` (*Đang sử dụng*), `completed` (*Hoàn thành*), `cancelled` (*Đã hủy*), `expired` (*Quá hạn thanh toán*).
@@ -26,15 +26,18 @@
 ## Bản đồ cấu trúc tệp tin (`d:\Jobs\Sports\app\src\`)
 
 - **Create:** `src/domain/slots.ts` — Sinh khung giờ động theo giờ mở cửa Thứ 2–CN & tính đơn giá nhiều khung giờ
+- **Create:** `src/domain/pricing.ts` — Tính tiền thuê sân, khuyến mãi, tiền cọc theo từng khung giờ
+- **Create:** `src/domain/affected.ts` — Quét đơn đặt sân bị ảnh hưởng khi khóa sân / đổi giờ / thêm ngày nghỉ (UC 021)
 - **Create:** `src/domain/refund.ts` — Tính tỷ lệ/số tiền hoàn bậc thang 5 ngày / 2 ngày & kiểm tra điều kiện hủy
 - **Create:** `src/domain/reports.ts` — Tính động Dashboard ngày (UC 015) & Báo cáo doanh thu theo chi nhánh/từng sân (UC 023) từ dữ liệu thật trong store
+- **Create:** `src/appContext.ts` — Tách React Context & hook `useApp` khỏi `store.tsx`
 - **Create:** `src/utils/format.ts` — Tách hàm format tiền, ngày, `initials`, `homeOf` (xử lý cảnh báo `oxlint`)
 - **Create:** `src/components/AffectedBookingsModal.tsx` — Xử lý UC 021 (*Chuyển sân / Đổi giờ* & *Đóng đơn do cơ sở*)
 - **Create:** `src/components/BookingDetailModal.tsx` — Modal chi tiết đơn đặt sân (UC 006 Bước 3, Mục 5.9)
 - **Create:** `src/components/NotificationInbox.tsx` — Trung tâm Thông báo động (UC 026: lọc loại/đọc, đánh dấu đã đọc, deep-link kiểm tra mã hết hạn)
 - **Create:** `src/components/VietQrBox.tsx` — Component VietQR dùng chung cho màn 04 (`/payment/:id`), màn 06 (POS quầy) và màn 07 (Tất toán QR)
 - **Create:** `src/pages/Reconciliation.tsx` — Màn hình bổ sung Đối soát giao dịch & Hoàn tiền chờ xử lý (`/owner/reconciliation`, Mục 5.9)
-- **Modify:** `src/data.ts`, `src/store.tsx`, `src/App.tsx`, `src/layouts.tsx`, và toàn bộ 11 file trong `src/pages/*.tsx`
+- **Modify:** `src/data.ts`, `src/store.tsx`, `src/App.tsx`, `src/layouts.tsx`, và các trang liên quan trong `src/pages/*.tsx` (12 màn hình)
 
 ---
 
@@ -272,6 +275,6 @@ Expected: `tsc -b && vite build` thành công; `oxlint` trả **`Found 0 warning
 Run:
 ```powershell
 Set-Location "d:\Jobs\Sports\e2e"
-npm run test:srs
+npm run test:srs-audit
 ```
 Expected: **100% PASS (0 failed, 0 skipped)** trên toàn bộ kịch bản hoàn chỉnh và toàn bộ tiêu chí kiểm tra nghiệp vụ SRS!

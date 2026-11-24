@@ -9,15 +9,15 @@ còn test đỏ. Đánh dấu `[x]` khi xong và ghi ngày.
 ---
 
 ## M0 — Nền móng
-Chốt trước: **Q-01** (data access), **Q-13** (stack), **Q-02** (idempotency).
-- [ ] npm workspaces: `apps/api`, `apps/web`, `packages/shared`; tsconfig strict; ESLint + Prettier; Vitest.
+Chốt trước: **Q-01** (data access), **Q-13** (stack: `backend/` đang dùng NestJS 12), **Q-02** (idempotency).
+- [ ] Chuẩn hóa npm workspaces cho các thư mục hiện có: `backend/`, `app/`, `e2e/` và thêm `packages/shared`; tsconfig strict; lint (`oxlint` ở `app/`, ESLint ở `backend/`) + Prettier; Vitest.
 - [ ] `docker-compose.yml` SQL Server; script `db:reset` chạy `database/sporthub_init.sql`; migration runner đơn giản
-      (bảng `SchemaMigrations`, chạy file `database/migrations/*.sql` theo thứ tự).
-- [ ] `core/`: db pool + `withTransaction`, `AppError` + error middleware + envelope, `Clock`, `time`, `money`,
+      (bảng `SchemaMigrations`, chạy file `database/migrations/*.sql` theo thứ tự). *(Hiện `backend/` đã có `src/config/database.ts`, `DatabaseModule`, `npm run db:test`.)*
+- [ ] `backend/src/core/`: db pool + `withTransaction`, `AppError` + error filter/middleware + envelope, `Clock`, `time`, `money`,
       `SettingsService`, `codes` (usp_NextCode), logger có `traceId`, `realtime` emitter thu sự kiện sau commit.
 - [ ] `packages/shared`: enum + nhãn tiếng Việt, mã lỗi, zod validators dùng chung (mục 11 business-rules).
-- [ ] FE: Vite + Router + layout trống `CustomerLayout`, `StaffLayout`, API client (bearer, refresh 1 lần, Idempotency-Key).
-- DoD: `npm run dev` chạy; `GET /api/v1/health` đọc được DB; test integration mẫu tạo/rollback transaction.
+- [ ] FE (`app/`): đã có 12 màn hình prototype + bộ test `e2e/` Playwright; bổ sung API client (bearer, refresh 1 lần, Idempotency-Key), TanStack Query và đồng bộ route/proxy `/api` → `backend/`.
+- DoD: `backend/` và `app/` cùng chạy; `GET /api/v1/health` (hiện tại `GET /api/health` và `GET /api/health/db` ở `backend/src/health/health.controller.ts`) đọc được DB; test integration mẫu tạo/rollback transaction.
 
 ## M1 — Xác thực & phân quyền
 API 01, 02, 06, 09, 10 · middleware `authenticate`, `authorize`, `branchScope` · socket handshake + `auth.revoked`.
