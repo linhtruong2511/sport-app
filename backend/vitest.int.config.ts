@@ -12,6 +12,7 @@ export default defineConfig({
     globalSetup: ['./vitest.int.setup.ts'],
     env: {
       DB_DATABASE: process.env.DB_TEST_DATABASE || 'SportHub_Test',
+      UV_THREADPOOL_SIZE: process.env.UV_THREADPOOL_SIZE || '32',
     },
     pool: 'forks',
     poolOptions: {
