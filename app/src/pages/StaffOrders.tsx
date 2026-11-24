@@ -1,205 +1,1021 @@
-import { useState } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
-import { STATUS_LABEL, TODAY, branchOf, remaining } from '../data'
-import type { Booking, CancelCategory } from '../data'
-import type { StaffOutlet } from '../layouts'
-import { useApp } from '../appContext'
-import AffectedBookingsModal from '../components/AffectedBookingsModal'
-import VietQrBox from '../components/VietQrBox'
-import { calculateRefund, isNoShowEligible } from '../domain/refund'
-import { kfmt, money, toVN, vnd } from '../utils/format'
+import { useEffect, useState } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
+import {
+  BOOKING_STATUS_LABELS,
+  PAYMENT_STATUS_LABELS,
+  type BookingSummaryDto,
+  type PaymentMethod,
+  type PaymentRequestDto,
+} from '@sporthub/shared';
+import { availabilityKeys } from '../api/availability.ts';
+import {
+  bookingsKeys,
+  cancelBookingApi,
+  useBookingDetail,
+  useCancelPreview,
+} from '../api/bookings.ts';
+import { getServerNowMs } from '../api/client.ts';
+import { dashboardKeys } from '../api/dashboard.ts';
+import {
+  createPaymentRequestApi,
+  recheckPaymentRequestApi,
+} from '../api/payments.ts';
+import {
+  checkInPosBookingApi,
+  completePosBookingApi,
+  posKeys,
+  settlePosBookingApi,
+  usePosBookings,
+  type PosBookingsTab,
+} from '../api/pos.ts';
+import { queryClient } from '../api/queryClient.ts';
+import { subscribeRoom, unsubscribeRoom } from '../api/socket.ts';
+import AffectedBookingsModal from '../components/AffectedBookingsModal.tsx';
+import BookingDetailModal from '../components/BookingDetailModal.tsx';
+import VietQrBox from '../components/VietQrBox.tsx';
+import type { StaffOutlet } from '../layouts.tsx';
+import { useToast } from '../ui/toastContext.ts';
+import {
+  extractErrorMessage,
+  formatCountdown,
+  formatDateTimeVn,
+  kfmt,
+  toVN,
+  todayVn,
+  vnd,
+} from '../utils/format.ts';
 
-type F = 'all' | 'waiting' | 'playing' | 'overdue' | 'pending' | 'completed' | 'cancelled' | 'expired' | 'affected'
-const REASONS = ['Khách yêu cầu hủy lịch', 'Khách quá giờ nhận sân không đến', 'Sân gặp sự cố / bảo trì đột xuất', 'Đặt nhầm khung giờ', 'Lý do khác']
-const SORT = ['overdue', 'confirmed', 'pending', 'playing', 'completed', 'cancelled', 'expired']
+type OrdersTab = PosBookingsTab | 'AFFECTED';
+
+const CANCEL_REASONS = [
+  'Khách yêu cầu hủy lịch',
+  'Khách bận việc đột xuất',
+  'Đặt nhầm khung giờ',
+  'Lý do khác',
+];
+
+function statusBadgeClass(b: BookingSummaryDto): string {
+  if (b.isOverdue) return 'b-amber';
+  switch (b.status) {
+    case 'CONFIRMED':
+      return 'b-sky';
+    case 'IN_USE':
+      return 'b-mint';
+    case 'PENDING_PAYMENT':
+      return 'b-amber';
+    case 'COMPLETED':
+      return 'b-gray';
+    case 'CANCELED':
+      return 'b-rose';
+    case 'EXPIRED':
+      return 'b-gray';
+  }
+}
 
 export default function StaffOrders() {
-  const { user, bookings, courts, checkIn, settleBooking, completeBooking, cancelBooking, toast } = useApp()
-  const { branchFilter } = useOutletContext<StaffOutlet>()
-  const branchId = branchFilter
-  const [sp] = useSearchParams()
-  const bid = sp.get('bookingId')
-  const [date, setDate] = useState(TODAY)
-  const [f, setF] = useState<F>('all')
-  const [q, setQ] = useState(bid ?? '')
-  const [query, setQuery] = useState(bid ?? '')
-  const inBranch = (b: Booking) => courts.find((c) => c.id === b.courtId)?.branchId === branchId
-  const todays = bookings.filter((b) => b.date === date && inBranch(b))
-  const affected = bookings.filter((b) => b.isAffected && ['pending', 'confirmed', 'overdue'].includes(b.status) && inBranch(b))
-  const [settleId, setSettleId] = useState<string | null>(() => todays.find((b) => b.id === bid && b.status === 'confirmed' && remaining(b) > 0)?.id ?? todays.find((b) => b.status === 'confirmed' && remaining(b) > 0)?.id ?? null)
-  const [cancelId, setCancelId] = useState<string | null>(() => todays.find((b) => b.id === bid && b.status === 'overdue')?.id ?? todays.find((b) => b.status === 'overdue')?.id ?? null)
-  const [category, setCategory] = useState<CancelCategory>(() => (todays.some((b) => b.status === 'overdue') ? 'noshow' : 'customer'))
-  const [method, setMethod] = useState<'qr' | 'cash'>('qr')
-  const [reason, setReason] = useState(REASONS[0])
-  const [note, setNote] = useState('')
-  const [cErr, setCErr] = useState('')
+  const { activeBranchId, branches } = useOutletContext<StaffOutlet>();
+  const { toast } = useToast();
+  const [sp] = useSearchParams();
+  const initialQuery = sp.get('bookingId') ?? sp.get('bookingCode') ?? '';
 
-  const is = (b: Booking, k: F) => (k === 'waiting' ? b.status === 'confirmed' : b.status === k)
-  const cnt = (k: F) => (k === 'all' ? todays.length : k === 'affected' ? affected.length : todays.filter((b) => is(b, k)).length)
-  const kw = query.trim().replace('#', '').toLowerCase()
-  const rows = todays.filter((b) => (f === 'all' || is(b, f)) && (!kw || b.id.toLowerCase().includes(kw) || b.customer.toLowerCase().includes(kw) || b.phone.includes(kw)))
-    .sort((a, b) => SORT.indexOf(a.status) - SORT.indexOf(b.status) || a.start.localeCompare(b.start))
-  const cName = (b: Booking) => courts.find((c) => c.id === b.courtId)?.name ?? ''
-  const settle = bookings.find((b) => b.id === settleId && b.status === 'confirmed')
-  const cancel = bookings.find((b) => b.id === cancelId && ['confirmed', 'overdue', 'pending'].includes(b.status))
-  const preview = cancel ? calculateRefund({ playDate: cancel.date, playStart: cancel.start, paid: cancel.paid, depositAmount: cancel.depositAmount, category }) : null
+  const today = todayVn();
+  const [date, setDate] = useState(today);
+  const [tab, setTab] = useState<OrdersTab>('ALL');
+  const [searchInput, setSearchInput] = useState(initialQuery);
+  const [committedQ, setCommittedQ] = useState(initialQuery);
+  const [page, setPage] = useState(1);
 
-  const dayLabel = date === TODAY ? 'hôm nay' : `ngày ${toVN(date)}`
-  const tabs: [F, string][] = [['all', `Tất cả đơn ${dayLabel}`], ['waiting', 'Chờ khách nhận sân'], ['playing', 'Đang chơi trên sân'], ['overdue', 'Quá giờ nhận sân'], ['pending', 'Chờ thanh toán'], ['completed', 'Hoàn thành'], ['cancelled', 'Đã hủy'], ['expired', 'Quá hạn thanh toán'], ['affected', 'Đơn bị ảnh hưởng']]
-  const statusBadge = (b: Booking) => {
-    const m: Record<string, string> = { confirmed: 'b-sky', playing: 'b-mint', overdue: 'b-amber', pending: 'b-amber', completed: 'b-gray', cancelled: 'b-rose', expired: 'b-gray' }
-    return <span className={`badge ${m[b.status]}`}>{STATUS_LABEL[b.status]}</span>
-  }
-  const openCancel = (b: Booking) => { setCancelId(b.id); setCategory(b.status === 'overdue' ? 'noshow' : 'customer'); setCErr('') }
-  const doCheckIn = (b: Booking) => {
-    const r = checkIn(b.id)
-    if (!r.ok) return toast(r.error ?? 'Không thể nhận sân.', 'err')
-    toast(`Đã bàn giao ${cName(b)} cho khách.`, 'ok')
-  }
-  const doSettle = () => {
-    if (!settle) return
-    const r = settleBooking(settle.id, method, user?.staffId)
-    if (!r.ok) return toast(r.error ?? 'Không thể nhận sân.', 'err')
-    toast(`Đã thu đủ ${vnd(remaining(settle))} & cho khách vào sân.`, 'ok'); setSettleId(null)
-  }
-  const doCancel = () => {
-    if (!cancel) return
-    if (category === 'noshow' && cancel.status !== 'overdue' && !isNoShowEligible(cancel.date, cancel.start)) return setCErr('Chưa quá giờ nhận sân quy định (30 phút) — không thể chọn "Khách không đến nhận sân".')
-    cancelBooking(cancel.id, { reason: note.trim() ? `${reason} – ${note.trim()}` : reason, category, by: user?.role ?? 'staff' })
-    toast(`Đã hủy đơn #${cancel.id} & mở trống sân.`); setCancelId(null); setNote(''); setCErr('')
-  }
+  const [detailCode, setDetailCode] = useState<string | null>(null);
+  const [settleTarget, setSettleTarget] = useState<BookingSummaryDto | null>(null);
+  const [settleMethod, setSettleMethod] = useState<PaymentMethod>('CASH');
+  const [settleCheckIn, setSettleCheckIn] = useState(true);
+  const [settleQr, setSettleQr] = useState<PaymentRequestDto | null>(null);
+  const [settleBusy, setSettleBusy] = useState(false);
+
+  const [cancelTarget, setCancelTarget] = useState<BookingSummaryDto | null>(null);
+  const [cancelReason, setCancelReason] = useState(CANCEL_REASONS[0]);
+  const [cancelCustomReason, setCancelCustomReason] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
+
+  const [noShowTarget, setNoShowTarget] = useState<BookingSummaryDto | null>(null);
+  const [noShowBusy, setNoShowBusy] = useState(false);
+
+  const [rowBusyCode, setRowBusyCode] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => getServerNowMs());
+
+  const bookingsQ = usePosBookings(
+    activeBranchId
+      ? {
+          branchId: activeBranchId,
+          date,
+          tab: tab === 'AFFECTED' ? 'ALL' : tab,
+          q: committedQ || undefined,
+          page,
+          pageSize: 20,
+        }
+      : null,
+    { enabled: Boolean(activeBranchId) },
+  );
+
+  const cancelPreviewQ = useCancelPreview(
+    cancelTarget?.bookingCode,
+    'CUSTOMER_REQUEST',
+    { enabled: Boolean(cancelTarget) },
+  );
+
+  const settleBookingCode =
+    settleTarget && settleMethod === 'BANK_TRANSFER' ? settleTarget.bookingCode : null;
+  const settleDetailQ = useBookingDetail(settleBookingCode, {
+    enabled: Boolean(settleBookingCode),
+  });
+
+  useEffect(() => {
+    if (!settleBookingCode) return;
+    subscribeRoom({ channel: 'booking', bookingCode: settleBookingCode });
+    return () => {
+      unsubscribeRoom({ channel: 'booking', bookingCode: settleBookingCode });
+    };
+  }, [settleBookingCode]);
+
+  useEffect(() => {
+    if (!settleQr) return;
+    const timer = window.setInterval(() => {
+      setNowMs(getServerNowMs());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [settleQr]);
+
+  const invalidateAll = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: posKeys.all }),
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
+      queryClient.invalidateQueries({ queryKey: availabilityKeys.all }),
+      queryClient.invalidateQueries({ queryKey: bookingsKeys.all }),
+    ]);
+  };
+
+  useEffect(() => {
+    const detail = settleDetailQ.data;
+    if (!settleTarget || settleMethod !== 'BANK_TRANSFER' || !detail) return;
+    if (detail.bookingCode !== settleTarget.bookingCode) return;
+
+    if (detail.remainingAmount === 0) {
+      const finalizeQrSettle = async () => {
+        if (settleCheckIn && detail.allowedActions.includes('CHECK_IN')) {
+          try {
+            await checkInPosBookingApi(detail.bookingCode, { version: detail.version });
+          } catch {
+            // Ignore auto check-in failure if outside check-in window; payment itself succeeded
+          }
+        }
+        await invalidateAll();
+        toast(`Đã tất toán VietQR thành công cho đơn #${detail.bookingCode}.`, 'ok');
+        setSettleTarget(null);
+        setSettleQr(null);
+      };
+      void finalizeQrSettle();
+    }
+  }, [settleDetailQ.data, settleTarget, settleMethod, settleCheckIn, toast]);
+
+  const activeBranchName =
+    branches.find((b) => b.branchId === activeBranchId)?.name ?? 'Chi nhánh hiện tại';
+
+  const items = bookingsQ.data?.data ?? [];
+  const meta = bookingsQ.data?.meta;
+  const tabCounts = meta?.tabCounts;
+
+  const dayLabel = date === today ? 'hôm nay' : `ngày ${toVN(date)}`;
+  const tabs: Array<[OrdersTab, string]> = [
+    ['ALL', `Tất cả đơn ${dayLabel}`],
+    ['WAITING', 'Chờ khách nhận sân'],
+    ['IN_USE', 'Đang chơi trên sân'],
+    ['OVERDUE', 'Quá giờ nhận sân'],
+    ['PENDING_PAYMENT', 'Chờ thanh toán'],
+    ['COMPLETED', 'Hoàn thành'],
+    ['CANCELED', 'Đã hủy'],
+    ['EXPIRED', 'Quá hạn thanh toán'],
+    ['AFFECTED', 'Đơn bị ảnh hưởng'],
+  ];
+
+  const openSettleModal = (b: BookingSummaryDto) => {
+    setSettleTarget(b);
+    setSettleMethod('CASH');
+    setSettleCheckIn(true);
+    setSettleQr(null);
+  };
+
+  const handleSelectSettleMethod = async (nextMethod: PaymentMethod) => {
+    setSettleMethod(nextMethod);
+    if (nextMethod === 'BANK_TRANSFER' && settleTarget && !settleQr) {
+      setSettleBusy(true);
+      try {
+        const qr = await createPaymentRequestApi(
+          settleTarget.bookingCode,
+          { purpose: 'REMAINING' },
+          crypto.randomUUID(),
+        );
+        setSettleQr(qr);
+        setNowMs(getServerNowMs());
+      } catch (err) {
+        toast(extractErrorMessage(err), 'err');
+      } finally {
+        setSettleBusy(false);
+      }
+    }
+  };
+
+  const handleConfirmCashSettle = async () => {
+    if (!settleTarget) return;
+    setSettleBusy(true);
+    try {
+      const res = await settlePosBookingApi(
+        settleTarget.bookingCode,
+        {
+          method: 'CASH',
+          amount: settleTarget.remainingAmount,
+          checkIn: settleCheckIn,
+          version: settleTarget.version,
+        },
+        crypto.randomUUID(),
+      );
+      await invalidateAll();
+      toast(
+        settleCheckIn && res.booking.status === 'IN_USE'
+          ? `Đã thu đủ ${vnd(res.receipt.amount)} & bàn giao sân cho đơn #${res.booking.bookingCode}.`
+          : `Đã thu đủ ${vnd(res.receipt.amount)} cho đơn #${res.booking.bookingCode}.`,
+        'ok',
+      );
+      setSettleTarget(null);
+      setSettleQr(null);
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setSettleBusy(false);
+    }
+  };
+
+  const handleRecheckSettleQr = async () => {
+    if (!settleTarget || !settleQr) return;
+    setSettleBusy(true);
+    try {
+      const res = await recheckPaymentRequestApi(settleQr.requestId);
+      if (res.status === 'PAID' || res.booking?.remainingAmount === 0) {
+        if (settleCheckIn && res.booking && res.booking.status === 'CONFIRMED') {
+          try {
+            await checkInPosBookingApi(settleTarget.bookingCode, {
+              version: res.booking.version,
+            });
+          } catch {
+            // Outside check-in window; staff can check in manually later
+          }
+        }
+        await invalidateAll();
+        toast(`Đã xác nhận tất toán VietQR cho đơn #${settleTarget.bookingCode}.`, 'ok');
+        setSettleTarget(null);
+        setSettleQr(null);
+      } else {
+        toast(res.message || 'Chưa nhận được giao dịch chuyển khoản.', 'info');
+      }
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setSettleBusy(false);
+    }
+  };
+
+  const handleRegenerateSettleQr = async () => {
+    if (!settleTarget) return;
+    setSettleBusy(true);
+    try {
+      const qr = await createPaymentRequestApi(
+        settleTarget.bookingCode,
+        { purpose: 'REMAINING' },
+        crypto.randomUUID(),
+      );
+      setSettleQr(qr);
+      setNowMs(getServerNowMs());
+      toast('Đã tạo lại mã VietQR tất toán.', 'ok');
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setSettleBusy(false);
+    }
+  };
+
+  const handleCheckIn = async (b: BookingSummaryDto) => {
+    setRowBusyCode(b.bookingCode);
+    try {
+      await checkInPosBookingApi(b.bookingCode, { version: b.version });
+      await invalidateAll();
+      toast(`Đã bàn giao ${b.courtName} cho khách (#${b.bookingCode}).`, 'ok');
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setRowBusyCode(null);
+    }
+  };
+
+  const handleComplete = async (b: BookingSummaryDto) => {
+    setRowBusyCode(b.bookingCode);
+    try {
+      await completePosBookingApi(b.bookingCode, { version: b.version });
+      await invalidateAll();
+      toast(`Đơn #${b.bookingCode} đã hoàn thành.`, 'ok');
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setRowBusyCode(null);
+    }
+  };
+
+  const handleConfirmNoShow = async () => {
+    if (!noShowTarget) return;
+    setNoShowBusy(true);
+    try {
+      await cancelBookingApi(noShowTarget.bookingCode, {
+        cancelType: 'NO_SHOW',
+        reason: 'Khách không đến nhận sân',
+        version: noShowTarget.version,
+      });
+      await invalidateAll();
+      toast(`Đã hủy đơn quá giờ #${noShowTarget.bookingCode} & mở trống sân.`, 'ok');
+      setNoShowTarget(null);
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setNoShowBusy(false);
+    }
+  };
+
+  const openCancelModal = (b: BookingSummaryDto) => {
+    setCancelTarget(b);
+    setCancelReason(CANCEL_REASONS[0]);
+    setCancelCustomReason('');
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelTarget) return;
+    const finalReason =
+      cancelReason === 'Lý do khác'
+        ? cancelCustomReason.trim()
+        : cancelCustomReason.trim()
+          ? `${cancelReason} – ${cancelCustomReason.trim()}`
+          : cancelReason;
+
+    if (!finalReason) {
+      toast('Vui lòng nhập lý do hủy đơn.', 'err');
+      return;
+    }
+
+    setCancelBusy(true);
+    try {
+      await cancelBookingApi(cancelTarget.bookingCode, {
+        cancelType: 'CUSTOMER_REQUEST',
+        reason: finalReason.slice(0, 255),
+        version: cancelTarget.version,
+      });
+      await invalidateAll();
+      toast(`Đã hủy đơn #${cancelTarget.bookingCode} & giải phóng sân.`, 'ok');
+      setCancelTarget(null);
+    } catch (err) {
+      toast(extractErrorMessage(err), 'err');
+    } finally {
+      setCancelBusy(false);
+    }
+  };
 
   return (
     <>
       <section className="card row between wrap g16" style={{ padding: 16 }}>
         <div className="row g8 wrap">
-          {tabs.map(([k, l]) => <button key={k} data-testid={k === 'affected' ? 'affected-orders-tab' : undefined} className={`btn btn-md ${f === k ? 'btn-primary' : 'btn-ghost'}`} style={{ padding: '8px 14px', background: f === k ? undefined : 'var(--s100)', fontWeight: f === k ? 700 : 600 }} onClick={() => setF(k)}>{l} ({cnt(k)})</button>)}
+          {tabs.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              data-testid={k === 'AFFECTED' ? 'affected-orders-tab' : undefined}
+              className={`btn btn-md ${tab === k ? 'btn-primary' : 'btn-ghost'}`}
+              style={{
+                padding: '8px 14px',
+                background: tab === k ? undefined : 'var(--s100)',
+                fontWeight: tab === k ? 700 : 600,
+              }}
+              onClick={() => {
+                setTab(k);
+                setPage(1);
+              }}
+            >
+              {label} ({tabCounts?.[k] ?? 0})
+            </button>
+          ))}
         </div>
-        <div className="row g8">
-          <input data-testid="orders-date-filter" type="date" className="input sm" style={{ width: 'auto' }} value={date} onChange={(e) => setDate(e.target.value || TODAY)} />
-          <input className="input sm" style={{ width: 240, background: 'var(--s50)', padding: '8px 14px', borderRadius: 12 }} placeholder="Mã đơn, tên hoặc SĐT khách" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && setQuery(q)} />
-          <button className="btn btn-dark" onClick={() => setQuery(q)}>Tìm đơn</button>
+
+        <div className="row g8 wrap">
+          <input
+            data-testid="orders-date-filter"
+            type="date"
+            className="input sm"
+            style={{ width: 'auto' }}
+            value={date}
+            onChange={(e) => {
+              setDate(e.target.value || today);
+              setPage(1);
+            }}
+          />
+          <input
+            className="input sm"
+            style={{ width: 240, background: 'var(--s50)', padding: '8px 14px', borderRadius: 12 }}
+            placeholder="Mã đơn, tên hoặc SĐT khách"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setCommittedQ(searchInput.trim());
+                setPage(1);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-dark"
+            onClick={() => {
+              setCommittedQ(searchInput.trim());
+              setPage(1);
+            }}
+          >
+            Tìm đơn
+          </button>
         </div>
       </section>
 
-      <div className="grid12">
-        <section className="span8 card col g16">
-          {f === 'affected' ? (
-            <>
-              <div className="col g2"><h2 className="t14 w800 c-ink">Đơn đặt sân bị ảnh hưởng — {branchOf(branchId).name}</h2><span className="t12 c-s600">Do sân bảo trì / ngừng khai thác / ngày nghỉ / đổi giờ mở cửa. Chọn Chuyển sân / Đổi giờ hoặc Đóng đơn do cơ sở.</span></div>
-              <AffectedBookingsModal list={affected} testId="affected-orders-list" emptyText="Hiện không có đơn nào bị ảnh hưởng tại chi nhánh này." />
-            </>
-          ) : (
-            <>
-              <div className="row between">
-                <h2 className="t14 w800 c-ink">Danh sách lịch đặt sân ngày {toVN(date)}</h2>
-                <span className="t12 w500 c-s600">Lưu ý: Thu đủ 100% tiền sân trước khi bấm Nhận sân</span>
+      <section className="card col g16">
+        {tab === 'AFFECTED' ? (
+          <>
+            <div className="col g2">
+              <h2 className="t14 w800 c-ink">
+                Đơn đặt sân bị ảnh hưởng — {activeBranchName}
+              </h2>
+              <span className="t12 c-s600">
+                Do sân bảo trì / ngừng khai thác / ngày nghỉ / đổi giờ mở cửa. Chọn Chuyển sân / Đổi giờ hoặc Đóng đơn do cơ sở.
+              </span>
+            </div>
+            <AffectedBookingsModal
+              branchId={activeBranchId}
+              testId="affected-orders-list"
+              emptyText="Hiện không có đơn nào bị ảnh hưởng tại chi nhánh này."
+            />
+          </>
+        ) : (
+          <>
+            <div className="row between wrap g8">
+              <h2 className="t14 w800 c-ink">
+                Danh sách lịch đặt sân ngày {toVN(date)} — {activeBranchName}
+              </h2>
+              <span className="t12 w500 c-s600">
+                Lưu ý: Thu đủ 100% tiền sân trước khi bấm Nhận sân
+              </span>
+            </div>
+
+            {bookingsQ.isLoading ? (
+              <div className="hint" style={{ textAlign: 'center', padding: 24 }}>
+                Đang tải danh sách đơn đặt sân...
               </div>
+            ) : bookingsQ.isError ? (
+              <div className="field-err">
+                {extractErrorMessage(bookingsQ.error, 'Không thể tải danh sách đơn đặt sân.')}
+              </div>
+            ) : (
               <div className="tbl-wrap">
                 <table className="tbl">
-                  <thead><tr><th>Mã đơn / Khách hàng</th><th>Sân & Giờ chơi</th><th>Thanh toán</th><th>Trạng thái</th><th className="r">Xử lý</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Mã đơn / Khách hàng</th>
+                      <th>Sân & Giờ chơi</th>
+                      <th>Thanh toán</th>
+                      <th>Trạng thái</th>
+                      <th className="r">Xử lý</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {rows.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32, color: 'var(--s600)' }}>Không có đơn nào phù hợp.</td></tr>}
-                    {rows.map((b) => {
-                      const rem = remaining(b)
-                      const late = b.status === 'overdue'
-                      const closed = b.status === 'cancelled' || b.status === 'expired'
+                    {items.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          style={{ textAlign: 'center', padding: 32, color: 'var(--s600)' }}
+                        >
+                          Không có đơn nào phù hợp.
+                        </td>
+                      </tr>
+                    )}
+                    {items.map((b) => {
+                      const closed = b.status === 'CANCELED' || b.status === 'EXPIRED';
+                      const isRowBusy = rowBusyCode === b.bookingCode;
                       return (
-                        <tr key={b.id} className={settleId === b.id && b.status === 'confirmed' ? 'hl' : ''}>
-                          <td><div className="code mono">#{b.id}</div><div className="w700 c-s800">{b.customer}</div><div className="t11 c-s600">{b.phone}{!b.member ? ' (Khách vãng lai)' : ''}</div></td>
-                          <td><div className="w800 c-ink">{cName(b)}</div><div className={`w700 ${late ? 'c-rose' : 'c-brand8'}`} style={late ? undefined : b.status === 'confirmed' ? { color: 'var(--s700)', fontWeight: 600 } : undefined}>{b.start} - {b.end}{late ? ' (Trễ 30p)' : ''}</div>
-                            {(b.checkedInAt || b.completedAt) && <div className="t11 c-s600">{b.checkedInAt && `Nhận sân: ${b.checkedInAt}`}{b.completedAt && ` • Trả sân: ${b.completedAt}`}</div>}</td>
+                        <tr
+                          key={b.bookingCode}
+                          className={
+                            settleTarget?.bookingCode === b.bookingCode
+                              ? 'hl'
+                              : b.isOverdue
+                                ? 'warn-row'
+                                : undefined
+                          }
+                        >
                           <td>
-                            <div>Tổng: <b>{money(b.total)}</b>{b.paid > 0 && rem > 0 ? ` (Đã cọc: ${kfmt(b.paid)})` : ''}</div>
-                            {closed ? <div className="c-s600">{b.status === 'cancelled' ? `Đã hủy${b.paid > 0 ? ` • Hoàn ${b.refundRate ?? 0}%: ${vnd(b.refundAmount ?? 0)}` : ''}` : 'Quá hạn thanh toán'}</div> : rem > 0
-                              ? <div className="w800" style={{ color: late ? 'var(--amber-800)' : 'var(--rose-700)' }}>{late ? `Đã cọc: ${vnd(b.paid)}` : `Còn thiếu: ${vnd(rem)}`}</div>
-                              : <div className="w700 c-brand8">Còn thiếu: 0 VNĐ</div>}
-                            {!closed && !late && <span className={`badge sq ${rem === 0 ? 'b-green' : 'b-amber'}`} style={{ fontSize: 10, padding: '2px 8px', marginTop: 4 }}>{rem === 0 ? 'Đã trả đủ 100%' : b.paid > 0 ? 'Đã đặt cọc' : 'Chưa thanh toán'}</span>}
+                            <div className="code mono">#{b.bookingCode}</div>
+                            <div className="w700 c-s800">{b.customerName}</div>
+                            <div className="t11 c-s600">
+                              {b.customerPhone}
+                              {b.isGuest ? ' (Khách vãng lai)' : ''}
+                            </div>
                           </td>
-                          <td>{statusBadge(b)}{b.isAffected && <div className="t11 c-amber w700" style={{ marginTop: 4 }}>⚠ Bị ảnh hưởng</div>}</td>
+                          <td>
+                            <div className="w800 c-ink">{b.courtName}</div>
+                            <div
+                              className={`w700 ${b.isOverdue ? 'c-rose' : 'c-brand8'}`}
+                              style={
+                                b.isOverdue
+                                  ? undefined
+                                  : b.status === 'CONFIRMED'
+                                    ? { color: 'var(--s700)', fontWeight: 600 }
+                                    : undefined
+                              }
+                            >
+                              {b.startTime} - {b.endTime}
+                              {b.isOverdue ? ' (Quá giờ nhận sân)' : ''}
+                            </div>
+                            {(b.checkedInAt || b.checkedOutAt) && (
+                              <div className="t11 c-s600">
+                                {b.checkedInAt && `Nhận sân: ${formatDateTimeVn(b.checkedInAt)}`}
+                                {b.checkedOutAt && ` • Trả sân: ${formatDateTimeVn(b.checkedOutAt)}`}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div>
+                              Tổng: <b>{vnd(b.totalAmount)}</b>
+                              {b.paidAmount > 0 && b.remainingAmount > 0
+                                ? ` (Đã thu: ${kfmt(b.paidAmount)})`
+                                : ''}
+                            </div>
+                            {closed ? (
+                              <div className="c-s600">
+                                {b.status === 'CANCELED'
+                                  ? `Đã hủy${
+                                      b.cancel && b.cancel.refundAmount !== null
+                                        ? ` • Hoàn ${b.cancel.refundRate ?? 0}%: ${vnd(b.cancel.refundAmount)}`
+                                        : ''
+                                    }`
+                                  : 'Quá hạn thanh toán'}
+                              </div>
+                            ) : b.remainingAmount > 0 ? (
+                              <div
+                                className="w800"
+                                style={{
+                                  color: b.isOverdue ? 'var(--amber-800)' : 'var(--rose-700)',
+                                }}
+                              >
+                                Còn thiếu: {vnd(b.remainingAmount)}
+                              </div>
+                            ) : (
+                              <div className="w700 c-brand8">Còn thiếu: 0 VNĐ</div>
+                            )}
+                            {!closed && (
+                              <span
+                                className={`badge sq ${
+                                  b.paymentStatus === 'PAID' ? 'b-green' : 'b-amber'
+                                }`}
+                                style={{ fontSize: 10, padding: '2px 8px', marginTop: 4 }}
+                              >
+                                {PAYMENT_STATUS_LABELS[b.paymentStatus]}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`badge ${statusBadgeClass(b)}`}>
+                              {b.isOverdue ? 'Quá giờ nhận sân' : BOOKING_STATUS_LABELS[b.status]}
+                            </span>
+                          </td>
                           <td className="r">
-                            <div className="col g6" style={{ alignItems: 'flex-end' }}>
-                              {b.status === 'confirmed' && rem > 0 && <button className="btn btn-primary btn-sm" onClick={() => setSettleId(b.id)}>Thu nốt {kfmt(rem)} & Nhận sân</button>}
-                              {b.status === 'confirmed' && rem === 0 && <button className="btn btn-primary btn-sm" onClick={() => doCheckIn(b)}>Nhận sân ngay</button>}
-                              {b.status === 'confirmed' && <button className="btn btn-danger-o btn-xs" style={{ fontWeight: 600 }} onClick={() => openCancel(b)}>Hủy lịch</button>}
-                              {b.status === 'playing' && <button className="btn btn-dark btn-sm" onClick={() => { completeBooking(b.id); toast(`Đơn #${b.id} đã hoàn thành.`, 'ok') }}>✓ Kết thúc & Hoàn thành</button>}
-                              {late && <button className="btn btn-danger btn-sm" onClick={() => openCancel(b)}>Hủy đơn & Mở sân</button>}
-                              {b.status === 'pending' && <><span className="t11 c-amber w700">Chờ khách chuyển khoản</span><button className="btn btn-danger-o btn-xs" onClick={() => openCancel(b)}>Hủy lịch</button></>}
+                            <div className="row g6 wrap" style={{ justifyContent: 'flex-end' }}>
+                              {b.allowedActions.includes('SETTLE') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={isRowBusy}
+                                  onClick={() => openSettleModal(b)}
+                                >
+                                  Thu nốt {kfmt(b.remainingAmount)} & Nhận sân
+                                </button>
+                              )}
+                              {b.allowedActions.includes('CHECK_IN') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={isRowBusy}
+                                  onClick={() => void handleCheckIn(b)}
+                                >
+                                  {isRowBusy ? 'Đang xử lý...' : 'Nhận sân ngay'}
+                                </button>
+                              )}
+                              {b.allowedActions.includes('COMPLETE') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-dark btn-sm"
+                                  disabled={isRowBusy}
+                                  onClick={() => void handleComplete(b)}
+                                >
+                                  {isRowBusy ? 'Đang xử lý...' : '✓ Kết thúc & Hoàn thành'}
+                                </button>
+                              )}
+                              {b.allowedActions.includes('NO_SHOW_CANCEL') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-danger btn-sm"
+                                  disabled={isRowBusy}
+                                  onClick={() => setNoShowTarget(b)}
+                                >
+                                  Hủy đơn & Mở sân
+                                </button>
+                              )}
+                              {b.allowedActions.includes('CANCEL') && (
+                                <button
+                                  type="button"
+                                  className="btn btn-danger-o btn-xs"
+                                  style={{ fontWeight: 600 }}
+                                  disabled={isRowBusy}
+                                  onClick={() => openCancelModal(b)}
+                                >
+                                  Hủy lịch
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-xs"
+                                onClick={() => setDetailCode(b.bookingCode)}
+                              >
+                                Chi tiết
+                              </button>
                             </div>
                           </td>
                         </tr>
-                      )
+                      );
                     })}
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
-        </section>
+            )}
 
-        <aside className="span4 col g20">
-          <div className="card col g16" style={{ border: '2px solid var(--brand-700)', boxShadow: 'var(--shadow-md)' }}>
-            <div className="row between head-rule">
-              <div className="col g2" style={{ paddingTop: 5 }}><span className="eyebrow">Khách đến nhận sân</span><h3 className="t16 w800 c-ink" style={{ lineHeight: '24px' }}>Thu tất toán & Bàn giao sân</h3></div>
-              {settle && <span className="badge sq b-gray mono" style={{ fontSize: 11.5, fontWeight: 800 }}>#{settle.id}</span>}
-            </div>
-            {!settle ? <div className="hint" style={{ textAlign: 'center', padding: 24 }}>Chọn nút <b>"Thu nốt … & Nhận sân"</b> ở một đơn trong bảng để thu tiền còn thiếu.</div> : (
-              <>
-                <div className="hint col g6">
-                  <Line k="Khách hàng:" v={`${settle.customer} (${settle.phone})`} />
-                  <Line k="Sân & Khung giờ:" v={`${cName(settle)} (${settle.start} - ${settle.end})`} />
-                  <Line k="Tổng tiền đơn:" v={vnd(settle.total)} />
-                  <Line k="Đã đặt cọc trước:" v={vnd(settle.paid)} green />
-                  <div className="row between top-rule" style={{ paddingTop: 6, borderColor: 'var(--s300)' }}><b className="t14 c-rose" style={{ fontWeight: 800 }}>Cần thu thêm tại quầy:</b><b className="t14 c-rose" style={{ fontWeight: 800 }}>{vnd(remaining(settle))}</b></div>
+            {meta && meta.totalPages > 1 && (
+              <div className="row between wrap g12">
+                <span className="t12 c-s600">
+                  Trang {meta.page} / {meta.totalPages} ({meta.totalItems} đơn)
+                </span>
+                <div className="row g8">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    ← Trước
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={page >= meta.totalPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Sau →
+                  </button>
                 </div>
-                {remaining(settle) > 0 && (
-                  <div className="col g8">
-                    <label className="label" style={{ margin: 0 }}>Hình thức thu phần còn lại</label>
-                    <div className="row g8">
-                      {([['qr', '📱 Quét QR'], ['cash', '💵 Tiền mặt']] as const).map(([k, l]) => <label key={k} className={`radio-card f1${method === k ? ' on' : ''}`} style={{ fontWeight: 700 }}><input type="radio" name="m" checked={method === k} onChange={() => setMethod(k)} />{l}</label>)}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      {detailCode && (
+        <BookingDetailModal bookingCode={detailCode} onClose={() => setDetailCode(null)} />
+      )}
+
+      {settleTarget && (
+        <div
+          className="modal-bg"
+          onClick={() => {
+            if (!settleBusy) {
+              setSettleTarget(null);
+              setSettleQr(null);
+            }
+          }}
+        >
+          <div
+            className="modal"
+            data-testid="settle-modal"
+            style={{ maxWidth: 500 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="row between g12 head-rule">
+              <div className="col g2">
+                <span className="eyebrow">Khách đến nhận sân</span>
+                <h3 className="t18 w800 c-ink">Thu tất toán & Bàn giao sân</h3>
+              </div>
+              <span className="badge sq b-gray mono">#{settleTarget.bookingCode}</span>
+            </div>
+
+            <div className="hint col g6">
+              <div className="row between g12">
+                <span className="c-s600">Khách hàng:</span>
+                <b className="c-ink">
+                  {settleTarget.customerName} ({settleTarget.customerPhone})
+                </b>
+              </div>
+              <div className="row between g12">
+                <span className="c-s600">Sân & Khung giờ:</span>
+                <b className="c-ink">
+                  {settleTarget.courtName} ({settleTarget.startTime} - {settleTarget.endTime})
+                </b>
+              </div>
+              <div className="row between g12">
+                <span className="c-s600">Tổng tiền đơn:</span>
+                <b className="c-ink">{vnd(settleTarget.totalAmount)}</b>
+              </div>
+              <div className="row between g12">
+                <span className="c-brand8">Đã thanh toán trước:</span>
+                <b className="c-brand8">{vnd(settleTarget.paidAmount)}</b>
+              </div>
+              <div className="row between g12 top-rule" style={{ paddingTop: 6 }}>
+                <b className="t14 c-rose">Cần thu thêm tại quầy:</b>
+                <b className="t14 c-rose">{vnd(settleTarget.remainingAmount)}</b>
+              </div>
+            </div>
+
+            <label
+              className="row g8 hint"
+              style={{ padding: 10, cursor: 'pointer', background: 'var(--s50)' }}
+            >
+              <input
+                type="checkbox"
+                checked={settleCheckIn}
+                onChange={(e) => setSettleCheckIn(e.target.checked)}
+              />
+              <span className="t12 w700 c-ink">Nhận sân (bàn giao sân) ngay sau khi thu đủ tiền</span>
+            </label>
+
+            <div className="col g8">
+              <label className="label" style={{ margin: 0 }}>Hình thức thu phần còn lại</label>
+              <div className="row g8">
+                {([
+                  ['CASH', '💵 Tiền mặt'],
+                  ['BANK_TRANSFER', '📱 Quét QR'],
+                ] as const).map(([k, label]) => (
+                  <label
+                    key={k}
+                    className={`radio-card f1${settleMethod === k ? ' on' : ''}`}
+                    style={{ fontWeight: 700 }}
+                  >
+                    <input
+                      type="radio"
+                      name="settle-method"
+                      checked={settleMethod === k}
+                      disabled={settleBusy}
+                      onChange={() => void handleSelectSettleMethod(k)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {settleMethod === 'BANK_TRANSFER' && (
+              <div className="col g8">
+                {settleQr ? (
+                  <>
+                    <VietQrBox
+                      variant="compact"
+                      qrPayload={settleQr.qrPayload}
+                      bankName={settleQr.bank.bankName}
+                      bankAccountNo={settleQr.bank.accountNo}
+                      bankAccountName={settleQr.bank.accountName}
+                      amount={settleQr.amount}
+                      transferContent={settleQr.transferContent}
+                      imgTestId="settle-qr-image"
+                      amountTestId="settle-qr-amount"
+                    />
+                    <div className="row between wrap g8 t11">
+                      <span className="c-s600">
+                        Hiệu lực mã QR:{' '}
+                        <b className="mono">
+                          {formatCountdown(Math.max(0, Date.parse(settleQr.expiresAt) - nowMs))}
+                        </b>
+                      </span>
+                      <span className="c-amber w700">Chờ xác nhận từ ngân hàng</span>
                     </div>
-                    {method === 'qr' && <VietQrBox variant="compact" alt="VietQR" branch={branchOf(branchId)} amount={remaining(settle)} content={`THANHTOAN ${settle.id}`} imgTestId="settle-qr-image" amountTestId="settle-qr-amount" />}
+                  </>
+                ) : (
+                  <div className="hint" style={{ textAlign: 'center', padding: 16 }}>
+                    Đang tạo mã VietQR tất toán...
                   </div>
                 )}
-                <button className="btn btn-primary btn-lg btn-block" onClick={doSettle}>{remaining(settle) > 0 ? `✓ Đã thu đủ ${money(remaining(settle))} & Cho khách vào sân` : '✓ Cho khách vào sân'}</button>
-              </>
+              </div>
             )}
-          </div>
 
-          <div className="card col g16">
-            <div className="row between head-rule">
-              <div className="col g2" style={{ paddingTop: 5 }}><span className="eyebrow" style={{ color: 'var(--rose-700)' }}>Xử lý hủy lịch</span><h3 className="t16 w800 c-ink" style={{ lineHeight: '24px' }}>Hủy đơn & Giải phóng sân</h3></div>
-              {cancel && <span className="badge sq b-rose-soft mono" style={{ background: 'var(--rose-100)', fontSize: 11.4, fontWeight: 800 }}>#{cancel.id}</span>}
+            <div className="row g8 wrap" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-md"
+                disabled={settleBusy}
+                onClick={() => {
+                  setSettleTarget(null);
+                  setSettleQr(null);
+                }}
+              >
+                Đóng
+              </button>
+              {settleMethod === 'CASH' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-md"
+                  disabled={settleBusy}
+                  onClick={() => void handleConfirmCashSettle()}
+                >
+                  {settleBusy
+                    ? 'Đang xử lý...'
+                    : `✓ Đã thu đủ ${vnd(settleTarget.remainingAmount)}`}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-md"
+                    disabled={settleBusy}
+                    onClick={() => void handleRegenerateSettleQr()}
+                  >
+                    Tạo lại mã QR
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-md"
+                    disabled={settleBusy || !settleQr}
+                    onClick={() => void handleRecheckSettleQr()}
+                  >
+                    {settleBusy ? 'Đang kiểm tra...' : 'Kiểm tra lại giao dịch'}
+                  </button>
+                </>
+              )}
             </div>
-            {!cancel || !preview ? <div className="hint" style={{ textAlign: 'center', padding: 24 }}>Chọn <b>"Hủy lịch"</b> hoặc <b>"Hủy đơn & Mở sân"</b> ở một đơn để xử lý.</div> : (
-              <>
-                <div className="col g6">
-                  <label className="label" style={{ margin: 0 }}>Phân loại hủy <span className="req">*</span></label>
-                  {([['customer', 'cancel-category-customer', 'Khách báo hủy trước giờ chơi'], ['noshow', 'cancel-category-noshow', 'Khách không đến nhận sân (quá giờ)']] as const).map(([k, tid, l]) => (
-                    <label key={k} className={`radio-card${category === k ? ' on' : ''}`}><input type="radio" name="cat" data-testid={tid} checked={category === k} onChange={() => { setCategory(k); setCErr('') }} />{l}</label>
-                  ))}
-                </div>
-                <div className="hint" style={{ background: 'var(--rose-100)', borderColor: 'var(--rose-300)', color: 'var(--rose-950)', padding: 12 }}>
-                  {cancel.paid > 0
-                    ? <>Khách đã thanh toán <b>{vnd(cancel.paid)}</b> (cọc {vnd(Math.min(cancel.paid, cancel.depositAmount))} luôn được giữ lại). Tỷ lệ hoàn phần ngoài cọc: <b>{preview.rate}%</b> → hoàn <b>{vnd(preview.refund)}</b>, giữ lại <b>{vnd(preview.kept)}</b>. Sân được mở trống để nhận khách mới.</>
-                    : <>Đơn chưa phát sinh khoản thanh toán. Khi hủy, khung giờ sẽ được mở trống để nhận khách mới (lượt dùng mã khuyến mãi được hoàn lại).</>}
-                </div>
-                <div className="col g8">
-                  <label className="label" style={{ margin: 0 }}>Lý do hủy đơn</label>
-                  <select className="select sm" value={reason} onChange={(e) => setReason(e.target.value)}>{REASONS.map((r) => <option key={r}>{r}</option>)}</select>
-                  <input className="input sm" style={{ fontWeight: 500 }} placeholder="Ghi chú thêm (không bắt buộc)" value={note} onChange={(e) => setNote(e.target.value)} />
-                </div>
-                {cErr && <p className="field-err">{cErr}</p>}
-                <button className="btn btn-danger btn-md btn-block" onClick={doCancel}>Xác nhận hủy đơn & Mở trống lại sân</button>
-              </>
-            )}
           </div>
-        </aside>
-      </div>
-    </>
-  )
-}
+        </div>
+      )}
 
-function Line({ k, v, green }: { k: string; v: string; green?: boolean }) {
-  return <div className="row between g12 t12"><span className={green ? 'c-brand8' : 'c-s600'}>{k}</span><b className={green ? 'c-brand8' : 'c-ink'} style={{ textAlign: 'right' }}>{v}</b></div>
+      {cancelTarget && (
+        <div className="modal-bg" onClick={() => !cancelBusy && setCancelTarget(null)}>
+          <div
+            className="modal"
+            data-testid="pos-cancel-modal"
+            style={{ maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="row between g12 head-rule">
+              <h3 className="t18 w800 c-ink">Hủy đơn #{cancelTarget.bookingCode}?</h3>
+              <span className="badge sq b-rose-soft mono">#{cancelTarget.bookingCode}</span>
+            </div>
+
+            {cancelPreviewQ.isLoading ? (
+              <div className="hint" style={{ textAlign: 'center', padding: 16 }}>
+                Đang tính toán chính sách hoàn hủy...
+              </div>
+            ) : cancelPreviewQ.isError ? (
+              <div className="field-err">
+                {extractErrorMessage(cancelPreviewQ.error, 'Không thể tải thông tin hoàn hủy.')}
+              </div>
+            ) : cancelPreviewQ.data ? (
+              <div
+                className="hint col g4"
+                style={{
+                  background: 'var(--rose-50)',
+                  borderColor: 'var(--rose-300)',
+                  color: 'var(--rose-950)',
+                }}
+              >
+                {cancelPreviewQ.data.paidAmount > 0 ? (
+                  <>
+                    <span>
+                      Khách đã thanh toán <b>{vnd(cancelPreviewQ.data.paidAmount)}</b> (tiền cọc{' '}
+                      <b>{vnd(cancelPreviewQ.data.depositKept)}</b> luôn được giữ lại).
+                    </span>
+                    <span>
+                      Tỷ lệ hoàn phần ngoài cọc: <b>{cancelPreviewQ.data.refundRate}%</b> → hoàn{' '}
+                      <b>{vnd(cancelPreviewQ.data.refundAmount)}</b>, giữ lại{' '}
+                      <b>{vnd(cancelPreviewQ.data.retainedAmount)}</b>.
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    Đơn chưa phát sinh thanh toán. Khi hủy, khung giờ sẽ được mở trống lại.
+                  </span>
+                )}
+                {cancelPreviewQ.data.policyText && (
+                  <span className="t11">{cancelPreviewQ.data.policyText}</span>
+                )}
+              </div>
+            ) : null}
+
+            <div className="col g8">
+              <label className="label" style={{ margin: 0 }}>Lý do hủy đơn</label>
+              <select
+                className="select sm"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              >
+                {CANCEL_REASONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input sm"
+                placeholder={
+                  cancelReason === 'Lý do khác'
+                    ? 'Nhập lý do hủy cụ thể (bắt buộc)...'
+                    : 'Ghi chú thêm (không bắt buộc)'
+                }
+                maxLength={255}
+                value={cancelCustomReason}
+                onChange={(e) => setCancelCustomReason(e.target.value)}
+              />
+            </div>
+
+            <div className="row g8" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-md"
+                disabled={cancelBusy}
+                onClick={() => setCancelTarget(null)}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-md"
+                disabled={cancelBusy || (cancelPreviewQ.data ? !cancelPreviewQ.data.canCancel : false)}
+                onClick={() => void handleConfirmCancel()}
+              >
+                {cancelBusy ? 'Đang hủy...' : 'Xác nhận hủy đơn'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {noShowTarget && (
+        <div className="modal-bg" onClick={() => !noShowBusy && setNoShowTarget(null)}>
+          <div
+            className="modal"
+            data-testid="no-show-confirm-modal"
+            style={{ maxWidth: 440 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="t18 w800 c-ink">
+              Xác nhận hủy đơn quá giờ #{noShowTarget.bookingCode}?
+            </h3>
+            <div
+              className="hint col g4"
+              style={{
+                background: 'var(--rose-50)',
+                borderColor: 'var(--rose-300)',
+                color: 'var(--rose-950)',
+              }}
+            >
+              <span>
+                Đơn của khách <b>{noShowTarget.customerName}</b> ({noShowTarget.customerPhone}) đã quá giờ nhận sân.
+              </span>
+              <span>
+                Hủy phân loại <b>Khách không đến nhận sân (NO_SHOW)</b> sẽ giữ lại toàn bộ tiền đã thu (
+                <b>{vnd(noShowTarget.paidAmount)}</b>) và mở trống lại sân {noShowTarget.courtName}.
+              </span>
+            </div>
+            <div className="row g8" style={{ justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-md"
+                disabled={noShowBusy}
+                onClick={() => setNoShowTarget(null)}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-md"
+                disabled={noShowBusy}
+                onClick={() => void handleConfirmNoShow()}
+              >
+                {noShowBusy ? 'Đang xử lý...' : 'Xác nhận hủy & Mở sân'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }

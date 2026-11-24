@@ -1,68 +1,184 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { FRAMES, SPORTS, TODAY, sportOf } from '../data'
-import type { SportKey } from '../data'
-import { useApp } from '../appContext'
-import { depositLabel, promoActive, promoSummary } from '../domain/pricing'
-import { hoursOn, slotsFor } from '../domain/slots'
-import { money, toVN } from '../utils/format'
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  useBranchSportSummary,
+  useBranches,
+  useSports,
+  type BranchSportHoliday,
+  type SportListItem,
+} from '../api/catalog.ts';
+import { usePublicPromotions } from '../api/promotions.ts';
+import {
+  extractErrorMessage,
+  formatDepositRule,
+  formatPromoSummary,
+  money,
+  todayVn,
+  toVN,
+} from '../utils/format.ts';
 
-const TONE = { green: 'b-green', sky: 'b-sky', indigo: 'b-indigo', amber: 'b-amber' } as const
+const PROMO_TONES = ['b-green', 'b-sky', 'b-indigo', 'b-amber'] as const;
+
+const SPORT_FALLBACK_ICONS: Record<string, string> = {
+  PICKLEBALL: '🏓',
+  BADMINTON: '🏸',
+  FOOTBALL: '⚽',
+  TENNIS: '🎾',
+};
+
+function sportIconOf(sport: SportListItem): string {
+  if (sport.icon && sport.icon.trim()) {
+    return sport.icon;
+  }
+  return SPORT_FALLBACK_ICONS[sport.code.toUpperCase()] ?? '🏟️';
+}
+
+function getHolidayText(holiday: BranchSportHoliday | null | undefined): string | null {
+  if (!holiday) return null;
+  const record = holiday as BranchSportHoliday & { reason?: string | null };
+  return record.reason || record.note || record.name || 'Ngày nghỉ lễ';
+}
 
 export default function Home() {
-  const { courts, promos, branches, holidays, blocker, lockAt } = useApp()
-  const nav = useNavigate()
-  const [f, setF] = useState({ branch: 'cs1', sport: 'pickleball' as SportKey, date: TODAY, frame: FRAMES[3].label })
-  const [focusBranch, setFocusBranch] = useState('cs1')
-  const count = (k: SportKey) => courts.filter((c) => c.sport === k && c.active).length
-  const go = (p: Record<string, string>) => nav(`/booking?${new URLSearchParams(p).toString()}`)
-  const search = () => go({ branch: f.branch, sport: f.sport, date: f.date, frame: f.frame })
-  const pub = promos.filter((p) => !p.counterOnly && promoActive(p) && p.end >= TODAY)
+  const nav = useNavigate();
+  const today = todayVn();
 
-  // Cụm sân của chi nhánh đang chọn — số khung giờ trống tính động từ lịch đặt, khóa bảo trì & ngày nghỉ
-  const fb = branches.find((b) => b.id === focusBranch) ?? branches[0]
-  const clusters = SPORTS.map((s) => ({ s, cs: courts.filter((c) => c.branchId === fb.id && c.sport === s.key && c.active) })).filter((x) => x.cs.length)
-  const freeSlots = (cs: typeof courts) => {
-    const slots = slotsFor(fb, holidays, TODAY)
-    let n = 0
-    for (const c of cs) for (const sl of slots) if (!blocker(c.id, TODAY, sl.start, sl.end) && !lockAt(c.id, TODAY, sl.start, sl.end)) n++
-    return n
-  }
-  const h = hoursOn(fb, TODAY)
+  const branchesQ = useBranches({ status: 'ACTIVE' });
+  const sportsQ = useSports();
+  const promotionsQ = usePublicPromotions({ limit: 3 });
+
+  const branches = branchesQ.data ?? [];
+  const sports = sportsQ.data ?? [];
+  const promotions = promotionsQ.data ?? [];
+
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+  const [selectedSportId, setSelectedSportId] = useState<number | null>(null);
+  const [date, setDate] = useState<string>(today);
+  const [selectedFocusBranchId, setSelectedFocusBranchId] = useState<number | null>(null);
+
+  const effectiveBranchId = selectedBranchId ?? branches[0]?.branchId ?? null;
+  const effectiveSportId = selectedSportId ?? sports[0]?.sportId ?? null;
+  const focusBranchId = selectedFocusBranchId ?? branches[0]?.branchId ?? null;
+
+  const summaryQ = useBranchSportSummary(focusBranchId, { date: today });
+  const summary = summaryQ.data;
+  const totalCourts = branches.reduce((sum, b) => sum + b.courtCount, 0);
+
+  const go = (params: Record<string, string>) => {
+    nav(`/booking?${new URLSearchParams(params).toString()}`);
+  };
+
+  const handleSearch = () => {
+    const query: Record<string, string> = { date: date || today };
+    if (effectiveBranchId) query.branchId = String(effectiveBranchId);
+    if (effectiveSportId) query.sportId = String(effectiveSportId);
+    go(query);
+  };
+
+  const holidayText = getHolidayText(summary?.branch.holiday);
 
   return (
     <>
       {/* Hero + khung tìm kiếm */}
       <section className="hero col g20" style={{ padding: '32px 32px 28px' }}>
-        <span className="badge" style={{ alignSelf: 'flex-start', background: 'rgba(4,120,87,.8)', border: '1px solid rgba(16,185,129,.4)', color: 'var(--brand-100)' }}>
-          ⚡ Hệ thống {branches.length} Chi nhánh • {courts.length} Sân tiêu chuẩn thi đấu
+        <span
+          className="badge"
+          style={{
+            alignSelf: 'flex-start',
+            background: 'rgba(4,120,87,.8)',
+            border: '1px solid rgba(16,185,129,.4)',
+            color: 'var(--brand-100)',
+          }}
+        >
+          ⚡ Hệ thống {branches.length} Chi nhánh • {totalCourts} Sân tiêu chuẩn thi đấu
         </span>
-        <h1 style={{ fontSize: 32, lineHeight: '40px', fontWeight: 800, maxWidth: 700, letterSpacing: -0.4 }}>Tìm sân nhanh, xem giờ trống trực tiếp & giữ sân chỉ trong 1 phút</h1>
+        <h1 style={{ fontSize: 32, lineHeight: '40px', fontWeight: 800, maxWidth: 700, letterSpacing: -0.4 }}>
+          Tìm sân nhanh, xem giờ trống trực tiếp & giữ sân chỉ trong 1 phút
+        </h1>
         <p className="t14" style={{ maxWidth: 720, color: 'var(--brand-100)', lineHeight: '22.75px' }}>
-          Không cần gọi điện chờ đợi. Chọn khung giờ yêu thích trên bảng lịch, thanh toán trọn gói hoặc đặt cọc giữ chỗ qua mã QR và nhận thông báo nhắc lịch trước giờ chơi.
+          Không cần gọi điện chờ đợi. Chọn khung giờ yêu thích trên bảng lịch, thanh toán trọn gói
+          hoặc đặt cọc giữ chỗ qua mã QR và nhận thông báo nhắc lịch trước giờ chơi.
         </p>
-        <div className="search-card">
-          <div><label className="label">Chi nhánh</label>
-            <select className="select" value={f.branch} onChange={(e) => setF({ ...f, branch: e.target.value })}>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select></div>
-          <div><label className="label">Bộ môn thể thao</label>
-            <select className="select" value={f.sport} onChange={(e) => setF({ ...f, sport: e.target.value as SportKey })}>
-              {SPORTS.map((s) => <option key={s.key} value={s.key}>{s.label}{s.key === 'pickleball' ? ' (Sân mái che)' : ''}</option>)}
-            </select></div>
-          <div><label className="label">Ngày chơi</label>
-            <input className="input" type="date" value={f.date} min={TODAY} onChange={(e) => setF({ ...f, date: e.target.value || TODAY })} /></div>
-          <div><label className="label">Khung giờ</label>
-            <select className="select" value={f.frame} onChange={(e) => setF({ ...f, frame: e.target.value })}>
-              {FRAMES.map((x) => <option key={x.label}>{x.label}</option>)}
-            </select></div>
-          <button className="btn btn-primary btn-lg" style={{ height: 44 }} onClick={search}>Tìm sân trống ngay →</button>
+        <div className="search-card" style={{ gridTemplateColumns: 'repeat(3, 1fr) auto' }}>
+          <div>
+            <label className="label" htmlFor="home-branch">
+              Chi nhánh
+            </label>
+            <select
+              id="home-branch"
+              className="select"
+              value={effectiveBranchId ?? ''}
+              disabled={branchesQ.isLoading || branches.length === 0}
+              onChange={(e) => setSelectedBranchId(Number(e.target.value) || null)}
+            >
+              {branches.length === 0 ? (
+                <option value="">Đang tải chi nhánh...</option>
+              ) : (
+                branches.map((b) => (
+                  <option key={b.branchId} value={b.branchId}>
+                    {b.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="home-sport">
+              Bộ môn thể thao
+            </label>
+            <select
+              id="home-sport"
+              className="select"
+              value={effectiveSportId ?? ''}
+              disabled={sportsQ.isLoading || sports.length === 0}
+              onChange={(e) => setSelectedSportId(Number(e.target.value) || null)}
+            >
+              {sports.length === 0 ? (
+                <option value="">Đang tải bộ môn...</option>
+              ) : (
+                sports.map((s) => (
+                  <option key={s.sportId} value={s.sportId}>
+                    {s.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="home-date">
+              Ngày chơi
+            </label>
+            <input
+              id="home-date"
+              className="input"
+              type="date"
+              value={date}
+              min={today}
+              onChange={(e) => setDate(e.target.value || today)}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-lg"
+            style={{ height: 44 }}
+            disabled={!effectiveBranchId || !effectiveSportId}
+            onClick={handleSearch}
+          >
+            Tìm sân trống ngay →
+          </button>
         </div>
         <div className="row g8 wrap">
-          <span className="t12 w700" style={{ color: 'var(--brand-100)' }}>Bộ môn phổ biến:</span>
-          {SPORTS.map((s) => (
-            <button key={s.key} className={`sport-chip${f.sport === s.key ? ' on' : ''}`} onClick={() => setF({ ...f, sport: s.key })}>
-              {s.emoji} {s.label} ({count(s.key)} sân)
+          <span className="t12 w700" style={{ color: 'var(--brand-100)' }}>
+            Bộ môn phổ biến:
+          </span>
+          {sports.map((s) => (
+            <button
+              type="button"
+              key={s.sportId}
+              className={`sport-chip${effectiveSportId === s.sportId ? ' on' : ''}`}
+              onClick={() => setSelectedSportId(s.sportId)}
+            >
+              {sportIconOf(s)} {s.name} ({s.activeCourtCount} sân)
             </button>
           ))}
         </div>
@@ -73,25 +189,55 @@ export default function Home() {
         <div className="row between">
           <div className="col g2">
             <h2 className="t18 w800 c-ink">Mã ưu đãi dành cho bạn</h2>
-            <p className="t12 c-s600">Dùng mã giảm giá ở bước đặt sân để tiết kiệm chi phí thuê sân.</p>
+            <p className="t12 c-s600">
+              Dùng mã giảm giá ở bước đặt sân để tiết kiệm chi phí thuê sân.
+            </p>
           </div>
-          <button className="link-btn" onClick={() => nav('/booking')}>Đặt sân & dùng mã →</button>
+          <button type="button" className="link-btn" onClick={() => nav('/booking')}>
+            Đặt sân & dùng mã →
+          </button>
         </div>
         <div className="row g16" style={{ alignItems: 'stretch' }}>
-          {pub.length === 0 && <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>Hiện chưa có chương trình ưu đãi nào đang chạy.</div>}
-          {pub.slice(0, 3).map((p, i) => (
+          {promotionsQ.isLoading && (
+            <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
+              Đang tải chương trình ưu đãi...
+            </div>
+          )}
+          {promotionsQ.isError && (
+            <div className="hint f1" style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}>
+              {extractErrorMessage(promotionsQ.error, 'Không thể tải danh sách ưu đãi.')}
+            </div>
+          )}
+          {!promotionsQ.isLoading && !promotionsQ.isError && promotions.length === 0 && (
+            <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
+              Hiện chưa có chương trình ưu đãi nào đang chạy.
+            </div>
+          )}
+          {promotions.slice(0, 3).map((p, i) => (
             <div key={p.code} className={`promo-card f1${i === 0 ? ' first' : ''}`}>
               <div className="row between g12">
-                <span className={`badge sq ${TONE[p.tone]}`} style={{ padding: '2px 10px', fontSize: 11 }}>{p.tag}</span>
+                <span
+                  className={`badge sq ${PROMO_TONES[i % PROMO_TONES.length]}`}
+                  style={{ padding: '2px 10px', fontSize: 11 }}
+                >
+                  {p.audienceType === 'SPECIFIC' ? 'Ưu đãi hội viên' : p.name}
+                </span>
                 <span className="code-chip">{p.code}</span>
               </div>
               <h3 className="t14 w800 c-ink" style={{ marginTop: 4 }}>
-                Giảm {promoSummary(p)}{p.fromHour === 0 && p.toHour === 24 ? ' tất cả khung giờ' : ` khung ${String(p.fromHour).padStart(2, '0')}:00 - ${String(p.toHour).padStart(2, '0')}:00`}
+                Giảm {formatPromoSummary(p.discountType, p.discountValue, p.maxDiscountAmount)}
+                {p.timeFrom && p.timeTo
+                  ? ` khung ${p.timeFrom} - ${p.timeTo}`
+                  : ' tất cả khung giờ'}
               </h3>
-              <p className="t12 c-s600">{p.scope} • HSD: {toVN(p.end)}</p>
+              <p className="t12 c-s600">
+                {p.scopeText} • HSD: {toVN(p.endDate)}
+              </p>
               <div className="row between" style={{ marginTop: 'auto' }}>
                 <span />
-                <button className="link-btn" onClick={() => go({ promo: p.code })}>Dùng ngay</button>
+                <button type="button" className="link-btn" onClick={() => go({ promo: p.code })}>
+                  Dùng ngay
+                </button>
               </div>
             </div>
           ))}
@@ -101,37 +247,117 @@ export default function Home() {
       {/* Cụm sân & chi nhánh */}
       <section className="grid12">
         <div className="span8 col g16">
-          <div className="row between">
+          <div className="row between wrap g8">
             <h2 className="t18 w800 c-ink">Các cụm sân đang mở nhận lịch hôm nay</h2>
             <span className="t12 w600 c-s600">Giá thuê hiển thị theo bảng giá từng sân</span>
           </div>
+          {holidayText && (
+            <div
+              className="hint"
+              style={{
+                background: 'var(--amber-50)',
+                borderColor: 'var(--amber-300)',
+                color: 'var(--amber-900)',
+              }}
+            >
+              📅 Hôm nay ({toVN(today)}) chi nhánh nghỉ lễ: {holidayText}.
+            </div>
+          )}
           <div className="row wrap g16" style={{ alignItems: 'stretch' }}>
-            {clusters.map(({ s, cs }) => {
-              const rates = cs.flatMap((c) => c.priceRules.map((r) => r.price))
-              const lo = Math.min(...rates), hi = Math.max(...rates)
-              const free = freeSlots(cs)
-              return (
-                <div key={s.key} className="cluster" style={{ width: 'calc(50% - 8px)' }}>
-                  <div className="cluster-body">
-                    <div className="row between">
-                      <span className={`badge sq ${TONE[fb.tone]}`} style={{ padding: '2px 10px', fontSize: 11 }}>{fb.name}</span>
-                      <span className={`badge ${free ? 'b-green-flat' : 'b-gray-o'}`} style={{ padding: '2px 10px', fontSize: 11 }}>{free ? `● Còn ${free} khung giờ trống` : '● Hết khung giờ trống'}</span>
+            {summaryQ.isLoading && (
+              <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
+                Đang tải thông tin cụm sân...
+              </div>
+            )}
+            {summaryQ.isError && (
+              <div
+                className="hint f1"
+                style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}
+              >
+                {extractErrorMessage(summaryQ.error, 'Không thể tải thông tin cụm sân.')}
+              </div>
+            )}
+            {summary &&
+              summary.sports.map((sp) => {
+                const free = sp.freeSlotCount;
+                const branchOpenText = summary.branch.holiday
+                  ? 'Nghỉ lễ'
+                  : summary.branch.isClosed ||
+                      !summary.branch.openTime ||
+                      !summary.branch.closeTime
+                    ? 'Đóng cửa'
+                    : `${summary.branch.openTime} – ${summary.branch.closeTime}`;
+                const priceText =
+                  sp.minPricePerHour !== null && sp.maxPricePerHour !== null
+                    ? sp.minPricePerHour === sp.maxPricePerHour
+                      ? `${money(sp.minPricePerHour)}/h`
+                      : `${money(sp.minPricePerHour)} - ${money(sp.maxPricePerHour)}/h`
+                    : 'Đang cập nhật';
+                const depositText = sp.deposit
+                  ? formatDepositRule(sp.deposit.type, sp.deposit.value)
+                  : formatDepositRule(null, null);
+
+                return (
+                  <div key={sp.sportId} className="cluster" style={{ width: 'calc(50% - 8px)' }}>
+                    <div className="cluster-body">
+                      <div className="row between g8">
+                        <span
+                          className="badge sq b-green"
+                          style={{ padding: '2px 10px', fontSize: 11 }}
+                        >
+                          {summary.branch.name}
+                        </span>
+                        <span
+                          className={`badge ${free > 0 ? 'b-green-flat' : 'b-gray-o'}`}
+                          style={{ padding: '2px 10px', fontSize: 11 }}
+                        >
+                          {free > 0
+                            ? `● Còn ${free} khung giờ trống`
+                            : '● Hết khung giờ trống'}
+                        </span>
+                      </div>
+                      <h3 className="t16 w800 c-ink">
+                        Cụm sân {sp.name} ({sp.courtCount} sân)
+                      </h3>
+                      <p className="t12 c-s600">📍 {summary.branch.address}</p>
+                      <div className="row g24" style={{ marginTop: 4 }}>
+                        <div className="col">
+                          <span className="t11 c-s500">Giờ mở cửa hôm nay:</span>
+                          <b className="t12 c-ink w800">{branchOpenText}</b>
+                        </div>
+                        <div className="col">
+                          <span className="t11 c-s500">Giá thuê sân:</span>
+                          <b className="t12 c-brand w800">{priceText}</b>
+                        </div>
+                      </div>
                     </div>
-                    <h3 className="t16 w800 c-ink">Cụm sân {sportOf(s.key).label} ({cs.length} sân)</h3>
-                    <p className="t12 c-s600">📍 {fb.address}</p>
-                    <div className="row g24" style={{ marginTop: 4 }}>
-                      <div className="col"><span className="t11 c-s500">Giờ mở cửa hôm nay:</span><b className="t12 c-ink w800">{h.closed ? 'Đóng cửa' : `${h.open} – ${h.close}`}</b></div>
-                      <div className="col"><span className="t11 c-s500">Giá thuê sân:</span><b className="t12 c-brand w800">{money(lo)} - {money(hi)}/h</b></div>
+                    <div className="cluster-foot">
+                      <span>Cọc từ {depositText}</span>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() =>
+                          go({
+                            branchId: String(summary.branch.branchId),
+                            sportId: String(sp.sportId),
+                            date: today,
+                          })
+                        }
+                      >
+                        Chọn giờ đặt
+                      </button>
                     </div>
                   </div>
-                  <div className="cluster-foot">
-                    <span>{s.detail} • cọc từ {depositLabel(cs[0])}</span>
-                    <button className="btn btn-primary btn-sm" onClick={() => go({ branch: fb.id, sport: s.key, date: TODAY })}>Chọn giờ đặt</button>
-                  </div>
+                );
+              })}
+            {!summaryQ.isLoading &&
+              !summaryQ.isError &&
+              summary &&
+              summary.sports.length === 0 && (
+                <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
+                  Chi nhánh này hiện chưa có sân đang hoạt động.
                 </div>
-              )
-            })}
-            {clusters.length === 0 && <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>Chi nhánh này hiện chưa có sân đang hoạt động.</div>}
+              )}
           </div>
         </div>
 
@@ -139,30 +365,65 @@ export default function Home() {
           <div className="card col g12">
             <div className="row between">
               <h3 className="t14 w800 c-ink">Hệ thống chi nhánh SportHub</h3>
-              <span className="t11 w700 c-brand">Khu vực Hà Nội</span>
+              <span className="t11 w700 c-brand">Đang hoạt động</span>
             </div>
+            {branchesQ.isLoading && (
+              <div className="hint" style={{ textAlign: 'center' }}>
+                Đang tải chi nhánh...
+              </div>
+            )}
+            {branchesQ.isError && (
+              <div className="hint" style={{ color: 'var(--rose-700)' }}>
+                {extractErrorMessage(branchesQ.error, 'Không thể tải danh sách chi nhánh.')}
+              </div>
+            )}
             {branches.map((b) => (
-              <button key={b.id} className={`branch-card${focusBranch === b.id ? ' on' : ''}`} onClick={() => { setFocusBranch(b.id); setF((x) => ({ ...x, branch: b.id })) }}>
-                <div className="row between"><span className="t12 w800 c-ink">📍 {b.name}</span><span className="t12 w700 c-s800">{courts.filter((c) => c.branchId === b.id).length} sân</span></div>
-                <div className="t11 c-s600" style={{ marginTop: 2 }}>{b.address.split(',')[0]} • SĐT: {b.phone}</div>
+              <button
+                type="button"
+                key={b.branchId}
+                className={`branch-card${focusBranchId === b.branchId ? ' on' : ''}`}
+                onClick={() => {
+                  setSelectedFocusBranchId(b.branchId);
+                  setSelectedBranchId(b.branchId);
+                }}
+              >
+                <div className="row between">
+                  <span className="t12 w800 c-ink">📍 {b.name}</span>
+                  <span className="t12 w700 c-s800">{b.courtCount} sân</span>
+                </div>
+                <div className="t11 c-s600" style={{ marginTop: 2 }}>
+                  {b.address.split(',')[0]}
+                  {b.phone ? ` • SĐT: ${b.phone}` : ''}
+                </div>
               </button>
             ))}
           </div>
           <div className="card col g12">
             <h3 className="t14 w800 c-ink">Hướng dẫn đặt lịch nhanh</h3>
             {[
-              ['Chọn khung giờ trống:', 'Nhấp trực tiếp vào ô giờ còn trống trên bảng lịch của cơ sở (có thể chọn nhiều khung liền kề).'],
-              ['Thanh toán đủ hoặc đặt cọc:', 'Quét mã VietQR để giữ sân ngay lập tức mà không cần chờ duyệt.'],
-              ['Nhận sân đúng giờ:', 'Hệ thống gửi thông báo nhắc lịch trước 1 tiếng. Lưu ý tiền đặt cọc không được hoàn lại khi hủy đơn hoặc quá giờ không đến nhận sân.'],
-            ].map(([a, b], i) => (
-              <div className="row g12" key={a} style={{ alignItems: 'flex-start' }}>
+              [
+                'Chọn khung giờ trống:',
+                'Nhấp trực tiếp vào ô giờ còn trống trên bảng lịch của cơ sở (có thể chọn nhiều khung liền kề).',
+              ],
+              [
+                'Thanh toán đủ hoặc đặt cọc:',
+                'Quét mã VietQR để giữ sân ngay lập tức mà không cần chờ duyệt.',
+              ],
+              [
+                'Nhận sân đúng giờ:',
+                'Hệ thống gửi thông báo nhắc lịch trước 1 tiếng. Lưu ý tiền đặt cọc không được hoàn lại khi hủy đơn hoặc quá giờ không đến nhận sân.',
+              ],
+            ].map(([title, desc], i) => (
+              <div className="row g12" key={title} style={{ alignItems: 'flex-start' }}>
                 <span className="step-no">{i + 1}</span>
-                <p className="t12 c-s700" style={{ lineHeight: '19px' }}><b className="c-ink">{a}</b> {b}</p>
+                <p className="t12 c-s700" style={{ lineHeight: '19px' }}>
+                  <b className="c-ink">{title}</b> {desc}
+                </p>
               </div>
             ))}
           </div>
         </aside>
       </section>
     </>
-  )
+  );
 }
