@@ -11,9 +11,9 @@ const sql: typeof sqlTypes =
 
 let poolPromise: Promise<sqlTypes.ConnectionPool> | null = null;
 
-function buildConfig(): sqlTypes.config {
+export function buildConfig(databaseName = env.db.database, poolMax = 10): sqlTypes.config {
   const poolOptions = {
-    max: 10,
+    max: poolMax,
     min: 0,
     idleTimeoutMillis: 30000,
   };
@@ -22,7 +22,7 @@ function buildConfig(): sqlTypes.config {
     const connectionString = [
       `Driver={${env.db.odbcDriver}}`,
       `Server=${env.db.server}`,
-      `Database=${env.db.database}`,
+      `Database=${databaseName}`,
       'Trusted_Connection=Yes',
       `TrustServerCertificate=${env.db.trustServerCertificate ? 'Yes' : 'No'}`,
       `Encrypt=${env.db.encrypt ? 'Yes' : 'No'}`,
@@ -38,7 +38,7 @@ function buildConfig(): sqlTypes.config {
   const [host, instanceName] = env.db.server.split('\\');
   return {
     server: host,
-    database: env.db.database,
+    database: databaseName,
     user: env.db.user,
     password: env.db.password,
     port: instanceName ? undefined : env.db.port,
@@ -47,14 +47,23 @@ function buildConfig(): sqlTypes.config {
       instanceName,
       encrypt: env.db.encrypt,
       trustServerCertificate: env.db.trustServerCertificate,
+      useUTC: true,
+      enableArithAbort: true,
     },
   };
 }
 
+export async function createPoolForDatabase(
+  databaseName: string,
+  poolMax = 10,
+): Promise<sqlTypes.ConnectionPool> {
+  const pool = new sql.ConnectionPool(buildConfig(databaseName, poolMax));
+  return pool.connect();
+}
+
 export async function getPool(): Promise<sqlTypes.ConnectionPool> {
   if (!poolPromise) {
-    const pool = new sql.ConnectionPool(buildConfig());
-    poolPromise = pool.connect().catch((err: unknown) => {
+    poolPromise = createPoolForDatabase(env.db.database, 10).catch((err: unknown) => {
       poolPromise = null;
       throw err;
     });
