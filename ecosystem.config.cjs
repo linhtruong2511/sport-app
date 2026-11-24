@@ -23,10 +23,12 @@ module.exports = {
       env: {
         NODE_ENV: 'development',
         TZ: 'Asia/Ho_Chi_Minh',
+        UV_THREADPOOL_SIZE: '32',
       },
       env_production: {
         NODE_ENV: 'production',
         TZ: 'Asia/Ho_Chi_Minh',
+        UV_THREADPOOL_SIZE: '32',
       },
     },
   ],
