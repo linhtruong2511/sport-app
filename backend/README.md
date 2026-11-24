@@ -1,26 +1,35 @@
-# SportApp Backend (Node.js + Express + TypeScript + SQL Server)
+# SportApp Backend (NestJS + TypeScript + SQL Server)
 
-Backend Node.js cho dự án **SportApp**, kết nối trực tiếp tới SQL Server (`LINHTRUONG\SQLEXPRESS`, database `SportApp`).
+Backend cho dự án **SportApp**, xây dựng trên **NestJS 12**, kết nối trực tiếp tới SQL Server (`LINHTRUONG\SQLEXPRESS`, database `SportApp`).
 
 ## Cấu trúc thư mục
 
 ```text
 backend/
 ├── src/
+│   ├── common/
+│   │   └── all-exceptions.filter.ts  # Chuẩn hóa response lỗi (404 / 500)
 │   ├── config/
-│   │   ├── env.ts          # Đọc biến môi trường từ .env
-│   │   └── database.ts     # SQL Server connection pool (Windows Auth / SQL Auth)
-│   ├── routes/
-│   │   └── health.route.ts # Endpoint kiểm tra server & kết nối DB
+│   │   ├── env.ts                    # Đọc biến môi trường từ .env
+│   │   └── database.ts               # SQL Server connection pool (Windows Auth / SQL Auth)
+│   ├── database/
+│   │   ├── database.module.ts        # Global module cung cấp DatabaseService
+│   │   └── database.service.ts       # Kiểm tra kết nối, đóng pool khi shutdown
+│   ├── health/
+│   │   ├── health.controller.ts      # GET /api/health, GET /api/health/db
+│   │   └── health.module.ts
 │   ├── scripts/
-│   │   └── testDb.ts       # Script kiểm tra kết nối SQL Server độc lập
-│   ├── app.ts              # Khởi tạo Express app & middleware
-│   └── index.ts            # Entry point khởi động server
-├── .env                    # Cấu hình máy hiện tại
-├── .env.example            # Mẫu cấu hình môi trường
+│   │   └── testDb.ts                 # Script kiểm tra kết nối SQL Server độc lập
+│   ├── app.module.ts                 # Root module
+│   └── main.ts                       # Entry point (bootstrap Nest, CORS, prefix /api)
+├── .env                              # Cấu hình máy hiện tại
+├── .env.example                      # Mẫu cấu hình môi trường
+├── nest-cli.json
 ├── package.json
 └── tsconfig.json
 ```
+
+Thêm module mới: tạo thư mục trong `src/` với `*.module.ts`, `*.controller.ts`, `*.service.ts`, rồi import module đó vào `AppModule`. Mọi route đều tự có prefix `/api`.
 
 ## Cấu hình kết nối SQL Server
 
@@ -46,10 +55,10 @@ npm install
 # Kiểm tra kết nối tới SQL Server
 npm run db:test
 
-# Chạy server ở chế độ development (hot-reload)
+# Chạy server ở chế độ development (watch mode)
 npm run dev
 
-# Build TypeScript sang JavaScript
+# Build sang dist/
 npm run build
 
 # Chạy bản build production
@@ -59,4 +68,4 @@ npm start
 ## Endpoints kiểm tra
 
 - `GET /api/health` — Kiểm tra trạng thái backend.
-- `GET /api/health/db` — Kiểm tra kết nối live tới `LINHTRUONG\SQLEXPRESS` / `SportApp`.
+- `GET /api/health/db` — Kiểm tra kết nối live tới `LINHTRUONG\SQLEXPRESS` / `SportApp` (503 nếu mất kết nối).
