@@ -11,7 +11,7 @@ const sql: typeof sqlTypes =
 
 let poolPromise: Promise<sqlTypes.ConnectionPool> | null = null;
 
-export function buildConfig(databaseName = env.db.database, poolMax = 10): sqlTypes.config {
+export function buildConfig(databaseName = env.db.database, poolMax = 20): sqlTypes.config {
   const poolOptions = {
     max: poolMax,
     min: 0,
@@ -55,7 +55,7 @@ export function buildConfig(databaseName = env.db.database, poolMax = 10): sqlTy
 
 export async function createPoolForDatabase(
   databaseName: string,
-  poolMax = 10,
+  poolMax = 20,
 ): Promise<sqlTypes.ConnectionPool> {
   const pool = new sql.ConnectionPool(buildConfig(databaseName, poolMax));
   return pool.connect();
@@ -63,7 +63,7 @@ export async function createPoolForDatabase(
 
 export async function getPool(): Promise<sqlTypes.ConnectionPool> {
   if (!poolPromise) {
-    poolPromise = createPoolForDatabase(env.db.database, 10).catch((err: unknown) => {
+    poolPromise = createPoolForDatabase(env.db.database, 20).catch((err: unknown) => {
       poolPromise = null;
       throw err;
     });
