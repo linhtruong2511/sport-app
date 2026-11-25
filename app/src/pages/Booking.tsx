@@ -416,7 +416,14 @@ export default function Booking() {
   const past = date < today;
   const slots = availability?.slots ?? [];
   const courts = availability?.courts ?? [];
-  const colSpanAll = Math.max(slots.length + 1, 2);
+  // Ẩn các cột giờ mà mọi sân đều đã qua (trạng thái PAST do API trả về, FE chỉ lọc hiển thị).
+  // Giữ nguyên chỉ số gốc của slot để chọn ô / báo giá không bị lệch.
+  const visibleSlotIdxs = slots
+    .map((_, i) => i)
+    .filter((i) => courts.length === 0 || !courts.every((c) => c.cells[i]?.state === 'PAST'));
+  const visibleSlotSet = new Set(visibleSlotIdxs);
+  const allSlotsPast = slots.length > 0 && courts.length > 0 && visibleSlotIdxs.length === 0;
+  const colSpanAll = Math.max(visibleSlotIdxs.length + 1, 2);
   const anyFree = courts.some((c) => c.cells.some((cell) => cell.state === 'FREE'));
   const displayBlockMinutes = activeSport?.displayBlockMinutes ?? availability?.slotMinutes ?? 60;
 
@@ -534,7 +541,7 @@ export default function Booking() {
       </section>
 
       <div className="grid12">
-        <section className="span8 card card-lg col g16">
+        <section className="span8 card card-lg col g16" style={{ minWidth: 0 }}>
           <div className="row between wrap g8">
             <h2 className="t16 w800 c-ink">
               Lịch sân {dow(date)}, {toVN(date)} –{' '}
@@ -613,18 +620,23 @@ export default function Booking() {
               <thead>
                 <tr>
                   <th>Sân thi đấu</th>
-                  {slots.map((slot) => (
-                    <th key={slot.start}>
-                      {slot.start} - {slot.end}
-                      <small
-                        className={
-                          slot.priceLabel?.toLowerCase().includes('cao điểm') ? 'peak' : undefined
-                        }
-                      >
-                        {slot.priceLabel ?? ''}
-                      </small>
-                    </th>
-                  ))}
+                  {visibleSlotIdxs.map((i) => {
+                    const slot = slots[i];
+                    return (
+                      <th key={slot.start}>
+                        {slot.start} - {slot.end}
+                        <small
+                          className={
+                            slot.priceLabel?.toLowerCase().includes('cao điểm')
+                              ? 'peak'
+                              : undefined
+                          }
+                        >
+                          {slot.priceLabel ?? ''}
+                        </small>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -654,9 +666,17 @@ export default function Booking() {
                       </td>
                     </tr>
                   )}
+                {!availabilityQ.isLoading && availability && allSlotsPast && (
+                  <tr>
+                    <td colSpan={colSpanAll} className="closed" style={{ padding: 24 }}>
+                      Đã hết khung giờ trong ngày này. Vui lòng chọn ngày khác.
+                    </td>
+                  </tr>
+                )}
                 {!availabilityQ.isLoading &&
                   availability &&
                   slots.length > 0 &&
+                  !allSlotsPast &&
                   courts.map((court) => {
                     const groups = groupLockedCells(court.cells);
                     const stateColor =
@@ -681,9 +701,17 @@ export default function Booking() {
                           </div>
                         </td>
                         {groups.map(({ startIdx, span, cell }) => {
+                          if (!visibleSlotSet.has(startIdx) && cell.state !== 'LOCKED') {
+                            return null;
+                          }
                           if (cell.state === 'LOCKED') {
+                            let visibleSpan = 0;
+                            for (let k = startIdx; k < startIdx + span; k++) {
+                              if (visibleSlotSet.has(k)) visibleSpan++;
+                            }
+                            if (visibleSpan === 0) return null;
                             return (
-                              <td key={startIdx} colSpan={span} className="locked">
+                              <td key={startIdx} colSpan={visibleSpan} className="locked">
                                 🔒{' '}
                                 {cell.blockType === 'DECOMMISSION'
                                   ? 'Ngừng khai thác sân'

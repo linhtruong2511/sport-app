@@ -1382,17 +1382,21 @@ export default function OwnerCourts() {
                   }}
                 >
                   {courtForm.priceRules.map((r, i) => (
-                    <div key={i} className="row g6 wrap" style={{ alignItems: 'center' }}>
+                    <div
+                      key={i}
+                      className="row g6"
+                      style={{ alignItems: 'center', flexWrap: 'nowrap' }}
+                    >
                       <input
                         className="input sm"
-                        style={{ width: 110 }}
+                        style={{ flex: '1 1 90px', minWidth: 0 }}
                         value={r.label}
                         aria-label={`Tên khung giá ${i + 1}`}
                         onChange={(e) => setRuleField(i, { label: e.target.value })}
                       />
                       <select
                         className="select sm"
-                        style={{ width: 135 }}
+                        style={{ width: 135, flexShrink: 0 }}
                         aria-label={`Ngày áp dụng khung ${i + 1}`}
                         value={String(r.dayOfWeekMask)}
                         onChange={(e) =>
@@ -1410,7 +1414,7 @@ export default function OwnerCourts() {
                       </select>
                       <input
                         className="input sm"
-                        style={{ width: 90 }}
+                        style={{ width: 90, flexShrink: 0 }}
                         type="time"
                         aria-label={`Giờ bắt đầu khung ${i + 1}`}
                         value={r.startTime}
@@ -1418,7 +1422,7 @@ export default function OwnerCourts() {
                       />
                       <input
                         className="input sm"
-                        style={{ width: 90 }}
+                        style={{ width: 90, flexShrink: 0 }}
                         type="time"
                         aria-label={`Giờ kết thúc khung ${i + 1}`}
                         value={r.endTime}
@@ -1426,7 +1430,7 @@ export default function OwnerCourts() {
                       />
                       <input
                         className="input sm bold"
-                        style={{ width: 110 }}
+                        style={{ width: 110, flexShrink: 0 }}
                         type="number"
                         min={0}
                         step={1000}
@@ -1439,6 +1443,7 @@ export default function OwnerCourts() {
                       <button
                         type="button"
                         className="btn btn-danger-o btn-xs"
+                        style={{ flexShrink: 0 }}
                         aria-label={`Xóa khung giá ${i + 1}`}
                         onClick={() =>
                           setCourtForm((f) => ({
