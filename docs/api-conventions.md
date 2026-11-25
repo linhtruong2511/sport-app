@@ -7,7 +7,7 @@ File này là luật chung + chỉ mục. Ví dụ JSON trong SDD chỉ minh h�
 
 | Nội dung | Quy ước |
 | --- | --- |
-| Base URL | `/api/v1` *(hiện tại `backend/src/main.ts` đang đặt prefix `/api`)*. Realtime: `/socket.io` |
+| Base URL | `/api/v1`. Realtime: `/socket.io` |
 | Định dạng | JSON UTF-8, trường **camelCase**; enum giữ mã CSDL (`PENDING_PAYMENT`) — FE tự ánh xạ nhãn |
 | Xác thực | `Authorization: Bearer <accessToken>`; refresh token ở cookie `sh_rt` |
 | Định danh | Đơn dùng `bookingCode` (`BK2026111001`) trong URL; tài nguyên khác dùng id số |
@@ -54,7 +54,7 @@ Thêm thông tin phụ của danh sách vào `meta` (`statusCounts`, `tabCounts`
 | 502 | `PAYMENT_GATEWAY_ERROR` | Không gọi được SePay |
 | 500 | `INTERNAL_ERROR` | Kèm `traceId`; không lộ stack trace |
 
-Toàn bộ mã lỗi định nghĩa **một lần** trong `packages/shared/src/errors.ts` *(dự kiến tạo ở M0)* (code → HTTP status → message mặc định).
+Toàn bộ mã lỗi định nghĩa **một lần** trong `packages/shared/src/errors.ts` (`ERROR_CATALOG`: code → HTTP status → message mặc định).
 
 ## 4. Đối tượng dùng chung (SDD 5.3)
 

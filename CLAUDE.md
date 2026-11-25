@@ -12,7 +12,7 @@ Hệ thống ngoài: **SePay** (webhook báo có chuyển khoản), Email/SMS/Za
 1. `docs/decisions.md` — mâu thuẫn đã chốt (R-xx) và câu hỏi còn mở (Q-xx). **Đọc trước khi động vào đặt sân, thanh toán, hủy, báo cáo.**
 2. `docs/SRS.md` — yêu cầu nghiệp vụ (*cái gì*). Đoạn ghi "Bổ sung ngày …" ghi đè phần cũ.
 3. `docs/SDD.md` — thiết kế (*làm thế nào*): kiến trúc, CSDL, 73 API, webhook, socket.
-4. `database/sporthub_init.sql` *(dự kiến tạo ở M0, hiện chưa có trong repo)* — tên bảng/cột/ràng buộc **chính xác**. Code khớp script, không khớp chữ trong SDD
+4. `database/sporthub_init.sql` (cùng `database/migrations/`) — tên bảng/cột/ràng buộc **chính xác**. Code khớp script, không khớp chữ trong SDD
    (vd. bảng `PaymentRequest` số ít, cột `Channel`, `CreatedAt`, `MaxDiscountAmount`).
 
 Bản tóm tắt dùng hằng ngày:
@@ -28,55 +28,44 @@ Gặp mâu thuẫn **chưa có** trong `decisions.md`: dừng lại, hỏi ngư�
 
 | Tầng | Công nghệ | Nguồn |
 | --- | --- | --- |
-| Backend | Node.js LTS + **TypeScript**, **NestJS 12** (`backend/`), `mssql`/`msnodesqlv8`, Socket.IO, node-cron, PM2 | SDD 2.x (chuyển NestJS trong `backend/`) |
-| Validation | zod (schema dùng chung cho route) | đề xuất – Q-13 |
+| Backend | Node.js LTS + **TypeScript**, **NestJS 12** (`backend/`), `mssql` (`msnodesqlv8` optional cho dev Windows), Socket.IO, node-cron, PM2 | R-14 |
+| Validation | zod (schema dùng chung trong `@sporthub/shared` và route backend) | R-14 |
 | CSDL | SQL Server 2016 SP1+ (script dùng `CREATE OR ALTER`, filtered index, `ROWVERSION`) | SDD 3 |
-| Data access | Xem **Q-01** (Prisma coi `DATETIME2` là UTC → lệch 7 giờ nếu dùng ngây thơ) | SDD 2.3 |
-| Frontend | React 19 + Vite 8 + TypeScript, React Router 7, CSS thuần + `oxlint` (`app/`); hướng API thêm TanStack Query, `socket.io-client`, `qrcode.react` | SDD 4, 2.6 |
-| Hạ tầng | Nginx (reverse proxy, HTTPS, rate limit, IP allowlist webhook), PM2 | SDD 2.2 |
-| Test | Playwright UI E2E (`e2e/`); Vitest (unit) + integration test SQL Server (dự kiến từ M0) | đề xuất |
+| Data access | `mssql` + SQL tham số hóa + `core/time.ts` (`useUTC: true` — xem **R-11**) | R-11 |
+| Frontend | React 19 + Vite 8 + TypeScript, React Router 7, TanStack Query, `socket.io-client`, `qrcode.react`, CSS thuần + `oxlint` (`app/`) | SDD 4, R-14 |
+| Hạ tầng | Linux: Nginx (reverse proxy, HTTPS, rate limit, IP allowlist webhook), PM2 (1 instance fork), `sqlcmd` backup (`deploy/`) | SDD 2.2, R-13 |
+| Test | Vitest (unit & SQL Server integration), Supertest, Playwright E2E (`e2e/`) | R-14 |
 
 ## Cấu trúc repo
 
 ```
-app/               React SPA (hiện đang chạy prototype) — xem app/CLAUDE.md, app/README.md
+app/               React SPA (12 màn hình nối API thật) — xem app/CLAUDE.md, app/README.md
 backend/           Backend NestJS 12 (SQL Server) — xem backend/CLAUDE.md, backend/README.md
-e2e/               Bộ kiểm thử UI E2E Playwright — xem e2e/README.md
+packages/shared/   Enum, nhãn tiếng Việt, mã lỗi ERROR_CATALOG, kiểu DTO, zod schema dùng chung FE/BE
+database/          sporthub_init.sql + migrations/ (001..004) + scripts/ (backup/restore)
+deploy/            nginx.conf + runbook vận hành production Linux (deploy/README.md)
+e2e/               Bộ kiểm thử E2E Playwright (chạy với Backend + SportHub_Test) — xem e2e/README.md
 docs/              Tài liệu ràng buộc, SRS.md, SDD.md, images/, specs/README.md
 .claude/           settings.json + slash command (/implement-api, /new-module, /review-rules)
-packages/shared/   (dự kiến ở M0) Enum, nhãn tiếng Việt, kiểu DTO, zod schema dùng chung FE/BE
-database/          (dự kiến ở M0) sporthub_init.sql + migrations/
 ```
 
 ## Lệnh
 
-Hiện tại repo chưa thiết lập npm workspaces ở thư mục gốc; chạy lệnh trong từng thư mục tương ứng:
-
-```bash
-# Frontend prototype (app/)
-cd app && npm install && npm run dev    # Vite :5173
-cd app && npm run lint && npm run build # oxlint + tsc -b && vite build
-
-# Backend NestJS (backend/)
-cd backend && npm install && npm run db:test  # kiểm tra kết nối SQL Server theo backend/.env
-cd backend && npm run dev                     # NestJS watch (:3000 theo .env.example)
-
-# E2E UI Playwright (e2e/)
-cd e2e && npm install && npm test             # chạy kiểm thử giao diện prototype
-```
-
-Lệnh mục tiêu khi hoàn tất cấu hình workspace ở giai đoạn M0 (`docs/roadmap.md`):
+Repo dùng npm workspaces tại thư mục gốc (`@sporthub/shared`, `sportapp-backend`, `app`, `sporthub-ui-e2e`):
 
 ```bash
 docker compose up -d mssql          # SQL Server dev (cổng 1433)
-npm run db:reset                    # chạy database/sporthub_init.sql — XÓA SẠCH DB dev rồi seed lại
+npm run db:reset                    # chạy database/sporthub_init.sql + migrations (từ chối production / non-dev DB nếu thiếu --force-i-know)
+npm run db:migrate                  # chạy các migration chưa áp dụng
+npm run build                       # build @sporthub/shared, backend và app
 npm run lint && npm run typecheck   # bắt buộc xanh trước khi báo xong
-npm test                            # unit test toàn repo
-npm run test:int -w backend         # integration test cần DB đang chạy
+npm test                            # unit test toàn repo (@sporthub/shared + backend)
+npm run test:int                    # integration test trên SQL Server SportHub_Test
+npm test -w sporthub-ui-e2e         # Playwright E2E full-stack với SportHub_Test
 ```
 
-Tài khoản seed prototype (`app/src/data.ts`): Chủ sân `0900000001` / `Chu123456`; nhân viên CS01 `0933445566` / `Nv123456`;
-khách `0987654321` (hoặc `0912345678`) / `Matkhau123`. Chỉ dùng cho dev.
+Tài khoản seed trong `database/sporthub_init.sql`: Chủ sân `0900000001` (`owner@sporthub.vn`) / `Owner@123`; nhân viên CS01 `0933445577` / `Nv123456`; nhân viên CS02 `0933445566` / `Nv123456`;
+khách `0987654321` (hoặc `0912345678`) / `An123456`. Chỉ dùng cho dev/test.
 
 ## Bất biến — không được phá
 
@@ -107,7 +96,7 @@ Chi tiết và nguồn ở `docs/business-rules.md`. Code vi phạm một trong 
 - Định danh code bằng tiếng Anh. Thông báo lỗi hiển thị cho người dùng bằng tiếng Việt, **đúng câu chữ** trong đặc tả API
   của SDD (không có thì lấy SRS). Enum giữ mã tiếng Anh viết hoa như CSDL; JSON dùng camelCase.
 - Ghi nguồn nghiệp vụ trong comment ở chỗ có quy tắc không hiển nhiên: `// UC 009-1c`, `// SDD 3.5e`, `// API-18`.
-- Enum + nhãn tiếng Việt chỉ định nghĩa một lần trong `packages/shared` (khi tách workspace ở M0).
+- Enum + nhãn tiếng Việt chỉ định nghĩa một lần trong `packages/shared`.
 - Không thêm thư viện mới khi chưa nói lý do; ưu tiên thứ đã có trong stack.
 
 ## Cách làm việc

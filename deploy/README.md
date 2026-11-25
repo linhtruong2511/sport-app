@@ -1,22 +1,23 @@
 # SportHub Production Deployment Runbook
 
-Tài liệu hướng dẫn triển khai và vận hành SportHub trên môi trường production (SQL Server 2016 SP1+, Node.js LTS + PM2, Nginx, Windows Task Scheduler cho backup).
+Tài liệu hướng dẫn triển khai và vận hành SportHub trên môi trường production (Linux Ubuntu/Docker, Nginx, Node.js LTS + PM2, SQL Server 2016 SP1+ với `DB_AUTH_TYPE=sql`, backup qua `sqlcmd` bash script). Script PowerShell giữ lại cho môi trường Windows dev.
 
 ## 1. Chuẩn bị biến môi trường
 
 1. Tạo file `backend/.env` từ mẫu [`backend/.env.example`](../backend/.env.example).
-2. Cập nhật đầy đủ các giá trị production (không commit `.env` lên Git):
+2. Cập nhật đầy đủ các giá trị production (không commit `.env` lên Git — backend sẽ **từ chối khởi động** nếu thiếu hoặc còn giá trị mặc định dev khi `NODE_ENV=production`):
    - `NODE_ENV=production`
+   - `TZ=Asia/Ho_Chi_Minh`
    - `PORT=3000`
    - `CORS_ORIGIN=https://<domain-cua-ban>`
    - `COOKIE_SECURE=true`
-   - `JWT_ACCESS_SECRET` (chuỗi ngẫu nhiên đủ mạnh)
-   - `SEPAY_WEBHOOK_API_KEY`, `SEPAY_API_TOKEN`
-   - Cấu hình SQL Server (`DB_AUTH_TYPE`, `DB_SERVER`, `DB_DATABASE=SportHub`, `DB_USER`, `DB_PASSWORD`, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERTIFICATE`)
+   - `JWT_ACCESS_SECRET` (bắt buộc ≥ 32 ký tự, khác chuỗi mẫu)
+   - `SEPAY_WEBHOOK_API_KEY`, `SEPAY_API_TOKEN` (khác chuỗi mẫu)
+   - Cấu hình SQL Server: `DB_AUTH_TYPE=sql`, `DB_SERVER`, `DB_DATABASE=SportHub`, `DB_USER`, `DB_PASSWORD`, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERTIFICATE`
 
 ## 2. Build ứng dụng
 
-Tại thư mục gốc repo:
+Tại thư mục gốc repo (trên Linux, `msnodesqlv8` nằm trong `optionalDependencies` nên không bắt buộc build native Windows ODBC):
 
 ```bash
 npm ci
@@ -32,7 +33,9 @@ Copy thư mục `app/dist` sang `/var/www/sporthub/app/dist` (hoặc cấu hình
 
 ## 3. Khởi tạo & Migration SQL Server
 
-- **Cài đặt lần đầu (chưa có DB):** chạy [`database/sporthub_init.sql`](../database/sporthub_init.sql) bằng `sqlcmd` hoặc SSMS (đặt `@SeedSample = 0` trên production để không nạp dữ liệu mẫu).
+> **CẢNH BÁO MẤT DỮ LIỆU:** [`database/sporthub_init.sql`](../database/sporthub_init.sql) chứa chuỗi `DROP TABLE IF EXISTS` toàn bộ bảng (được bảo vệ mặc định bằng `@AllowReset = 0` — tự từ chối nếu `dbo.Users` đã có dữ liệu). Tuyệt đối không đặt `@AllowReset = 1` và không chạy `npm run db:reset` trên cơ sở dữ liệu production đã vận hành (`db:reset` tự động chặn khi `NODE_ENV=production` hoặc DB không thuộc whitelist test/dev).
+
+- **Cài đặt lần đầu (chưa có DB):** chạy [`database/sporthub_init.sql`](../database/sporthub_init.sql) bằng `sqlcmd` hoặc SSMS (đặt `@SeedSample = 0` trên production để không nạp dữ liệu mẫu), sau đó chạy `npm run db:migrate`.
 - **Cập nhật schema cho môi trường đang chạy:**
 
 ```bash
@@ -79,41 +82,47 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-## 6. Bảo trì SePay Webhook IP Allowlist
+## 6. Bảo trì SePay Webhook IP Allowlist (Go-Live Checklist bắt buộc)
 
 Endpoint `= /api/v1/webhooks/bank/sepay` được bảo vệ hai lớp: API key tại backend (`SEPAY_WEBHOOK_API_KEY`) và IP allowlist tại Nginx.
 
+> **BẮT BUỘC TRƯỚC GO-LIVE:** File mẫu [`deploy/nginx.conf`](./nginx.conf) hiện đang đặt `allow 127.0.0.1; deny all;`. Nếu quên thay bằng dải IP chính thức của SePay, mọi webhook báo có sẽ bị Nginx chặn `403`.
+
 1. Lấy danh sách IP/CIDR chính thức từ tài liệu hoặc cổng quản trị SePay.
 2. Mở `/etc/nginx/sites-available/sporthub` (và cập nhật tương ứng trong [`deploy/nginx.conf`](./nginx.conf)), thay thế placeholder `allow 127.0.0.1;` bằng các dòng `allow <IP_OR_CIDR>;` của SePay, giữ nguyên `deny all;` ở cuối.
-3. Kiểm tra và nạp lại Nginx:
+3. Kiểm tra và nạp lại Nginx, sau đó gửi webhook thử nghiệm kiểm tra status `200` (API key đúng) và `401` (API key sai):
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## 7. Sao lưu & Khôi phục SQL Server (Windows Task Scheduler)
+## 7. Sao lưu & Khôi phục SQL Server
 
-Hai script nằm tại [`database/scripts/backup.ps1`](../database/scripts/backup.ps1) và [`database/scripts/restore.ps1`](../database/scripts/restore.ps1).
+### Production Linux (`sqlcmd` + cron — R-13)
 
-### Chạy thủ công
+Hai script bash nằm tại [`database/scripts/backup.sh`](../database/scripts/backup.sh) và [`database/scripts/restore.sh`](../database/scripts/restore.sh):
 
-```powershell
-# Sao lưu (mặc định giữ 14 ngày trong C:\Backups\SportHub)
-powershell -NoProfile -ExecutionPolicy Bypass -File .\database\scripts\backup.ps1 -ServerInstance "localhost" -Database "SportHub" -BackupDir "C:\Backups\SportHub" -RetentionDays 14 -TrustServerCertificate
+```bash
+chmod +x database/scripts/backup.sh database/scripts/restore.sh
+
+# Sao lưu (giữ 14 ngày trong /var/backups/sporthub)
+DB_SERVER="localhost" DB_USER="sa" DB_PASSWORD="<password>" ./database/scripts/backup.sh
 
 # Khôi phục từ file .bak
-powershell -NoProfile -ExecutionPolicy Bypass -File .\database\scripts\restore.ps1 -ServerInstance "localhost" -Database "SportHub" -BackupFile "C:\Backups\SportHub\SportHub_20261125_020000.bak" -TrustServerCertificate
+DB_SERVER="localhost" DB_USER="sa" DB_PASSWORD="<password>" ./database/scripts/restore.sh /var/backups/sporthub/SportHub_20261125_020000.bak
 ```
 
-### Lên lịch tự động bằng Windows Task Scheduler
+Cron hằng ngày lúc `02:00` sáng (`crontab -e`):
 
-Tạo tác vụ chạy hằng ngày (ví dụ `02:00` sáng — giờ thấp điểm) với tài khoản có quyền `db_backupoperator` / `sysadmin` trên SQL Server và quyền ghi vào thư mục backup:
+```cron
+0 2 * * * DB_SERVER="localhost" DB_USER="sa" DB_PASSWORD="<password>" /opt/sporthub/database/scripts/backup.sh >> /var/log/sporthub-backup.log 2>&1
+```
+
+### Môi trường Windows dev (PowerShell)
+
+Hai script PowerShell nằm tại [`database/scripts/backup.ps1`](../database/scripts/backup.ps1) và [`database/scripts/restore.ps1`](../database/scripts/restore.ps1).
 
 ```powershell
-$action = New-ScheduledTaskAction `
-  -Execute 'powershell.exe' `
-  -Argument '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "D:\Jobs\Sports\database\scripts\backup.ps1" -ServerInstance "localhost" -Database "SportHub" -BackupDir "C:\Backups\SportHub" -RetentionDays 14 -TrustServerCertificate'
-
-$trigger = New-ScheduledTaskTrigger -Daily -At 2:00AM
-Register-ScheduledTask -TaskName 'SportHub-SQLBackup-Daily' -Action $action -Trigger $trigger -RunLevel Highest
+powershell -NoProfile -ExecutionPolicy Bypass -File .\database\scripts\backup.ps1 -ServerInstance "localhost" -Database "SportHub" -BackupDir "C:\Backups\SportHub" -RetentionDays 14 -TrustServerCertificate
+powershell -NoProfile -ExecutionPolicy Bypass -File .\database\scripts\restore.ps1 -ServerInstance "localhost" -Database "SportHub" -BackupFile "C:\Backups\SportHub\SportHub_20261125_020000.bak" -TrustServerCertificate
 ```

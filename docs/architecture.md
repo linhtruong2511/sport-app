@@ -31,8 +31,7 @@ Chỉ lớp Data access được chạm CSDL. Không có service nào khác ngo�
 | `admin` | Nhân viên, sân, bảng giá, giờ mở cửa, ngày nghỉ, khóa sân, đơn bị ảnh hưởng | 36–39, 42–58 |
 | `jobs` | Tác vụ nền (mục 7) — chỉ gọi service, không chứa nghiệp vụ riêng | — |
 
-Dùng chung (`backend/src/core` — dự kiến; hiện `backend/src/` đang dùng NestJS 12 với `common/`, `config/`, `database/`, `health/`, `scripts/`): `db` (pool, transaction), `errors`, `http` (envelope), `auth` guard/middleware, `branchScope`,
-`idempotency`, `settings`, `clock`, `money`, `time`, `realtime` (emitter), `codes` (usp_NextCode), `logger`.
+Dùng chung (`backend/src/core/`): `db` (pool, `DbTransactionService`), `errors`, `http` (envelope, rate limit, security headers, traceId), `auth` guard/middleware (`JwtAuthGuard`, `RolesGuard`, `BranchScopeGuard`), `idempotency`, `settings`, `clock`, `money`, `time`, `realtime` (`RealtimeGateway`, `RealtimeService`), `codes` (`usp_NextCode`), `logger`.
 
 ## 3. Lớp trong module
 
@@ -83,9 +82,7 @@ Xem `business-rules.md` mục 7 cho quy tắc khớp. Ràng buộc kỹ thuật:
 
 ## 7. Tác vụ nền (SDD 2.8, sửa theo R-04)
 
-node-cron trong tiến trình API. Mỗi lần chạy lấy `sp_getapplock @Resource='sporthub-jobs', @LockMode='Exclusive',
-@LockOwner='Session', @LockTimeout=0`; không lấy được → bỏ lượt. Mọi job **idempotent** (điều kiện WHERE theo trạng thái),
-xử lý theo lô (≤ 200 đơn/lượt), mỗi đơn một transaction riêng để một đơn lỗi không chặn cả lô.
+node-cron trong tiến trình API. Mỗi job dùng `JobLockService` lấy `sp_getapplock @Resource='sporthub-job-<tên>', @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=0` trên transaction khóa riêng (để các job khác nhau không chặn nhau); không lấy được → bỏ lượt. Mọi job **idempotent** (điều kiện WHERE theo trạng thái), xử lý theo lô (≤ 200 đơn/lượt), mỗi đơn một transaction riêng kèm `try/catch` để một đơn lỗi không chặn cả lô.
 
 | Job | Chu kỳ | Chọn | Hành động |
 | --- | --- | --- | --- |

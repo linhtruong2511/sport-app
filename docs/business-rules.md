@@ -172,14 +172,14 @@ RemainingAmount = TotalAmount − PaidAmount                                    
 
 **Webhook `POST /api/v1/webhooks/bank/sepay`:**
 1. Xác thực `Authorization: Apikey …` (hoặc HMAC) + IP allowlist ở Nginx. Sai → `401`, không ghi gì.
-2. INSERT `BankTransactions` (MatchStatus=PENDING, `RawPayload` nguyên văn). Trùng `(Provider, ProviderTxnId)` → trả `200` ngay.
+2. INSERT `BankTransactions` (MatchStatus=PENDING, `RawPayload` nguyên văn) trong transaction riêng và commit trước. Trùng `(Provider, ProviderTxnId)` → nếu bản ghi đã khác `PENDING` thì trả `200` ngay; nếu vẫn `PENDING` (lần gửi trước chưa khớp xong) thì tiếp tục khớp ở bước 3–7.
 3. `transferType = out` → `IGNORED`.
 4. Tách mã đơn bằng `/BK\d{10,}/i` sau khi bỏ khoảng trắng; tìm cơ sở theo `AccountNo = Branches.BankAccountNo`.
 5. Khóa đơn `WITH (UPDLOCK, ROWLOCK)` (không dùng RowVer — không được bỏ sót tiền).
 6. Khớp tự động khi và chỉ khi:
    - đơn `PENDING_PAYMENT`, `now ≤ HoldExpireAt`, số tiền = `AmountDueNow`, tài khoản đúng cơ sở của đơn → xác nhận; hoặc
    - đơn `CONFIRMED` + `DEPOSITED`, số tiền = `RemainingAmount` → tất toán (PAID).
-   Khi khớp: INSERT `Payments` (BANK_TRANSFER, `BankTxnId`, `RequestId`), cập nhật đơn, QR → PAID, MatchStatus=MATCHED.
+8. Phản hồi `200 {"success": true}` khi đã lưu được giao dịch. Lỗi nghiệp vụ không lường trước khi khớp → `NEEDS_REVIEW` (`UNKNOWN_CONTENT`); lỗi CSDL tạm thời (deadlock, timeout, mất kết nối) → giữ `PENDING` và trả `5xx` để SePay gửi lại và việc khớp được làm tiếp. Việc khớp chạy ở transaction thứ hai, khóa dòng `BankTransactions` (`UPDLOCK`) để các lần gửi song song không xử lý hai lần.
 7. Mọi trường hợp khác → `NEEDS_REVIEW` với `issue`: `WRONG_AMOUNT`, `UNKNOWN_CONTENT`, `LATE_PAYMENT` (đơn đã
    EXPIRED/CANCELED), `ACCOUNT_MISMATCH`. Không đổi đơn. Phát `reconciliation.created` tới `branch:{branchId}`.
 8. Phản hồi `200 {"success": true}` khi đã lưu được giao dịch; lỗi CSDL → `5xx` để SePay gửi lại.
@@ -299,6 +299,7 @@ Thực thu(kỳ) = Σ Payments.Amount có PaidAt trong kỳ
 | `LOGIN_MAX_FAILED` | 5 | Khóa tạm |
 | `LOGIN_LOCK_MINUTES` | 5 | Khóa tạm |
 | `QR_EXPIRE_MINUTES` | 10 | QR tại quầy |
+| `CHECKIN_EARLY_MINUTES` | 15 | Nhận sân sớm trước `StartAt` (R-12) |
 
 Đọc qua một `SettingsService` có cache ngắn (≤ 60 giây). Test phải truyền giá trị tường minh, không phụ thuộc DB.
 
@@ -307,47 +308,48 @@ Thực thu(kỳ) = Σ Payments.Amount có PaidAt trong kỳ
 Mỗi ca dưới đây phải có test tự động (unit cho hàm thuần, integration cho luồng có CSDL). Dùng đồng hồ giả (inject clock).
 
 **Tiền**
-- [ ] Đơn vắt 2 khung giá 15:00–17:00 → 2 price line, Base 400.000.
-- [ ] Thiếu bảng giá cho một đoạn → PRICE_NOT_CONFIGURED.
-- [ ] Giá được chọn theo thời điểm tạo đơn khi có 2 dòng hiệu lực trước/sau (bóng đá 600k → 650k từ 01/11).
-- [ ] PERCENT có trần: 20% của 600.000 trần 100.000 → giảm 100.000. FIXED lớn hơn Base → giảm = Base, Total = 0 → CONFIRMED + PAID, không QR.
-- [ ] 4 dòng ví dụ ở mục 6, kể cả DEPOSIT_NOT_ALLOWED. DepositValue lẻ (50.5%) làm tròn đúng.
+- [x] Đơn vắt 2 khung giá 15:00–17:00 → 2 price line, Base 400.000 (`pricing.engine.test.ts`, `quote.int.test.ts`).
+- [x] Thiếu bảng giá cho một đoạn → PRICE_NOT_CONFIGURED (`pricing.engine.test.ts`, `quote.int.test.ts`).
+- [x] Giá được chọn theo thời điểm tạo đơn khi có 2 dòng hiệu lực trước/sau (R-10) (`pricing.engine.test.ts`).
+- [x] PERCENT có trần; FIXED lớn hơn Base → giảm = Base, Total = 0 → CONFIRMED + PAID, không QR (`pricing.engine.test.ts`, `bookings.int.test.ts`).
+- [x] 4 dòng ví dụ ở mục 6, kể cả DEPOSIT_NOT_ALLOWED; DepositValue lẻ (50.5%) làm tròn đúng (`pricing.engine.test.ts`, `quote.int.test.ts`).
 
 **Khuyến mãi**
-- [ ] Mỗi reasonCode trong 8 điều kiện, đúng thứ tự ưu tiên (mã vừa hết hạn vừa sai cơ sở → OUT_OF_DATE).
-- [ ] Khách vãng lai dùng mã SPECIFIC → WRONG_AUDIENCE.
-- [ ] Hai request song song tranh lượt cuối → đúng một thành công, một PROMO_EXHAUSTED.
-- [ ] UsedCount −1 khi đơn chờ hủy/hết hạn; không đổi khi hủy đơn đã có tiền.
+- [x] Mỗi reasonCode trong 8 điều kiện, đúng thứ tự ưu tiên (`pricing.engine.test.ts`).
+- [x] Khách vãng lai dùng mã SPECIFIC → WRONG_AUDIENCE (`pricing.engine.test.ts`, `quote.int.test.ts`).
+- [x] Hai request song song tranh lượt cuối → đúng một thành công, một PROMO_EXHAUSTED (`bookings.int.test.ts`, `concurrency.int.test.ts`).
+- [x] UsedCount −1 khi đơn chờ hủy/hết hạn; không đổi khi hủy đơn đã có tiền (`bookings.int.test.ts`, `pos.int.test.ts`, `affected-bookings.int.test.ts`).
 
 **Trùng lịch & đồng thời**
-- [ ] Hai request tạo đơn trùng ô song song → một 201, một 409 SLOT_TAKEN.
-- [ ] Đơn EXPIRED/CANCELED giải phóng ô; đặt lại được ngay.
-- [ ] Hủy với `version` cũ → 409 BOOKING_STATE_CHANGED.
-- [ ] Cùng Idempotency-Key gửi 2 lần → cùng kết quả, 1 đơn; cùng key khác body → 409 IDEMPOTENCY_CONFLICT.
+- [x] Hai request tạo đơn trùng ô song song → một 201, một 409 SLOT_TAKEN (`bookings.int.test.ts`, `concurrency.int.test.ts`).
+- [x] Đơn EXPIRED/CANCELED giải phóng ô; đặt lại được ngay (`bookings.int.test.ts`).
+- [x] Hủy với `version` cũ → 409 BOOKING_STATE_CHANGED (`bookings.int.test.ts`, `concurrency.int.test.ts`).
+- [x] Cùng Idempotency-Key gửi 2 lần (tuần tự & song song) → cùng kết quả, 1 đơn; cùng key khác body/endpoint → 409 IDEMPOTENCY_CONFLICT (`bookings.int.test.ts`, `concurrency.int.test.ts`).
 
 **Thanh toán**
-- [ ] Webhook khớp đơn cọc → CONFIRMED + DEPOSITED; khớp phần còn lại → PAID.
-- [ ] Webhook trùng `id` → 200, không tạo Payments thứ hai.
-- [ ] Sai số tiền / không có mã / đơn EXPIRED / sai tài khoản → NEEDS_REVIEW, đơn không đổi.
-- [ ] Webhook đến khi đơn vừa hết hạn (now > HoldExpireAt nhưng job chưa chạy) → NEEDS_REVIEW (LATE_PAYMENT).
+- [x] Webhook khớp đơn cọc → CONFIRMED + DEPOSITED; khớp phần còn lại → PAID (`payments.int.test.ts`).
+- [x] Webhook trùng `id` → 200, không tạo Payments thứ hai (`payments.int.test.ts`).
+- [x] Webhook gặp lỗi DB tạm thời → 5xx, giao dịch giữ `PENDING`; gửi lại thì khớp tiếp, lần sau nữa không tạo Payments thứ hai (`payments.int.test.ts`).
+- [x] Sai số tiền / không có mã / đơn EXPIRED / sai tài khoản / lỗi bước khớp → NEEDS_REVIEW, đơn không đổi (`payments.int.test.ts`).
+- [x] Webhook đến khi đơn vừa hết hạn (now > HoldExpireAt nhưng job chưa chạy) → NEEDS_REVIEW (LATE_PAYMENT) (`payments.int.test.ts`).
 
 **Hủy & hoàn**
-- [ ] T = đúng 5 ngày → 100%; 4 ngày 23:59:59 → 50%; đúng 2 ngày → 50%; 1,99 ngày → 0%.
-- [ ] Đơn FULL 400.000 hủy trước 10 ngày → hoàn 400.000. Đơn cọc chưa tất toán hủy trước 10 ngày → hoàn 0, giữ cọc.
-- [ ] Đơn cọc đã tất toán (Paid = Total) hủy 3 ngày trước → hoàn 50% × (Paid − Deposit).
-- [ ] NO_SHOW đơn DEPOSITED tại StartAt+30' → hủy, slots giải phóng. Đơn PAID tại StartAt+30' → **không** hủy; tại EndAt → hủy NO_SHOW.
-- [ ] BY_FACILITY hoàn cả cọc và bị loại khỏi doanh thu.
-- [ ] Khách hủy sau StartAt → BOOKING_NOT_CANCELABLE.
+- [x] T = đúng 5 ngày → 100%; 4 ngày 23:59:59 → 50%; đúng 2 ngày → 50%; 1,99 ngày → 0% (`pricing.engine.test.ts`).
+- [x] Đơn FULL 400.000 hủy trước 10 ngày → hoàn 400.000. Đơn cọc chưa tất toán hủy trước 10 ngày → hoàn 0, giữ cọc (`pricing.engine.test.ts`, `bookings.int.test.ts`).
+- [x] Đơn cọc đã tất toán (Paid = Total) hủy 3 ngày trước → hoàn 50% × (Paid − Deposit) (`pricing.engine.test.ts`, `bookings.int.test.ts`).
+- [x] NO_SHOW đơn DEPOSITED tại StartAt+30' → hủy, slots giải phóng. Đơn PAID tại StartAt+30' → **không** hủy; tại EndAt → hủy NO_SHOW (`bookings.int.test.ts`, `jobs.int.test.ts`).
+- [x] BY_FACILITY hoàn cả cọc và bị loại khỏi doanh thu (`affected-bookings.int.test.ts`, `dashboard.int.test.ts`, `reports.int.test.ts`).
+- [x] Khách hủy sau StartAt → BOOKING_NOT_CANCELABLE (`bookings.int.test.ts`).
 
 **Nhận sân**
-- [ ] Nhận sân khi DEPOSITED → PAYMENT_INCOMPLETE. Sân còn đơn IN_USE → COURT_IN_USE (kiểm tra **trước** khi thu tiền ở API settle).
-- [ ] autoComplete tại EndAt.
+- [x] Nhận sân khi DEPOSITED → PAYMENT_INCOMPLETE. Sân còn đơn IN_USE → COURT_IN_USE (kiểm tra **trước** khi thu tiền ở API settle); đọc `CHECKIN_EARLY_MINUTES` từ `SystemSettings` (`pos.int.test.ts`).
+- [x] autoComplete tại EndAt (`jobs.int.test.ts`).
 
 **Phân quyền**
-- [ ] STAFF CS01 gửi branchId=CS02 → bị ép CS01 / thao tác đơn CS02 → 403 BRANCH_FORBIDDEN.
-- [ ] CUSTOMER đọc đơn người khác → 403 BOOKING_FORBIDDEN.
-- [ ] NV bị khóa: request kế tiếp với token cũ → 401 TOKEN_REVOKED.
-- [ ] Sai mật khẩu lần 5 → 423, đăng nhập đúng trong 5 phút vẫn 423.
+- [x] STAFF CS01 gửi branchId=CS02 → bị ép CS01 / thao tác đơn CS02 → 403 BRANCH_FORBIDDEN (`auth.int.test.ts`, `pos.int.test.ts`, `dashboard.int.test.ts`, `affected-bookings.int.test.ts`).
+- [x] CUSTOMER đọc đơn người khác (REST & Socket.IO) → 403 BOOKING_FORBIDDEN / từ chối phòng `booking:*` (`bookings.int.test.ts`, `payments.int.test.ts`, `realtime.int.test.ts`).
+- [x] NV bị khóa: request kế tiếp với token cũ → 401 TOKEN_REVOKED (`auth.int.test.ts`, `admin-staff.int.test.ts`).
+- [x] Sai mật khẩu lần 5 → 423, đăng nhập đúng trong 5 phút vẫn 423 (`auth.int.test.ts`).
 
 **Doanh thu**
-- [ ] Bộ seed hiện tại: tính tay và so với `/reports/revenue`, `/dashboard/daily`.
+- [x] Bộ seed hiện tại: tính tay và so với `/reports/revenue`, `/dashboard/daily` (`reports.int.test.ts`, `dashboard.int.test.ts`).

@@ -56,74 +56,78 @@ Báo giá trả `deposit.fullPaymentRequired = true`; tạo đơn DEPOSIT → `4
 ### R-10. Khung giá chọn theo thời điểm tạo đơn
 SDD 3.5a: `EffectiveFrom ≤ thời điểm tạo đơn < EffectiveTo`, không theo ngày chơi.
 
+### R-11. Data access và xử lý múi giờ SQL Server (`mssql` + `useUTC: true` + `core/time.ts`)
+> **Trạng thái:** thay đề xuất `useUTC: false` của Q-01 bằng `useUTC: true` + `core/time.ts`; **chờ chủ dự án xác nhận**.
+- Chốt phương án từ Q-01: không dùng Prisma; dùng driver `mssql` (tedious cho `DB_AUTH_TYPE=sql`, `msnodesqlv8` optional cho Windows dev `DB_AUTH_TYPE=windows`) với SQL tham số hóa và file SQL thuần (`database/sporthub_init.sql` + `database/migrations/`).
+- Do dữ liệu `DATETIME2(0)` lưu wall-clock giờ Việt Nam (không offset), backend cấu hình tedious `useUTC: true` và **mọi** chuyển đổi đọc/ghi đi qua `backend/src/core/time.ts` (`toSqlDateTime` / `fromSqlDateTime` dịch chuẩn `+07:00`). Tiến trình bắt buộc chạy `TZ=Asia/Ho_Chi_Minh`.
+
+### R-12. Thời gian cho phép nhận sân sớm (`CHECKIN_EARLY_MINUTES = 15`)
+> **Trạng thái:** áp dụng tạm theo đề xuất của Q-15; con số 15 phút **chờ chủ dự án xác nhận** (đổi bằng cách sửa `SystemSettings.CHECKIN_EARLY_MINUTES`, không cần sửa code).
+- Chốt Q-15: cho phép nhận sân sớm nhất `StartAt − CHECKIN_EARLY_MINUTES` (mặc định `15` phút), đọc từ bảng `SystemSettings` (migration `004_checkin_early_minutes.sql`), không hard-code.
+
+### R-13. Nền tảng triển khai Production (Linux + SQL Login)
+> **Trạng thái:** áp dụng theo đề xuất M-7 của review; **chờ chủ dự án xác nhận** nền tảng Linux.
+- Production chuẩn hóa chạy trên **Linux** (Nginx reverse proxy + HTTPS + IP allowlist SePay, Node.js LTS + PM2 1 instance fork mode, `DB_AUTH_TYPE=sql`, `DB_DATABASE=SportHub`, backup/restore qua `database/scripts/backup.sh` & `restore.sh` bằng `sqlcmd`).
+- Driver `msnodesqlv8` chuyển sang `optionalDependencies` của `backend/package.json` (chỉ cần cho dev trên Windows khi dùng `DB_AUTH_TYPE=windows`); script PowerShell `backup.ps1`/`restore.ps1` giữ lại cho môi trường Windows dev.
+
+### R-14. Stack kỹ thuật đã chốt (từ Q-13)
+- Backend: TypeScript + **NestJS 12** (`backend/`), `mssql`, `zod`, Socket.IO, `node-cron`, Vitest + Supertest.
+- Frontend: React 19 + Vite 8 + TypeScript + React Router 7 + TanStack Query + `socket.io-client` + `qrcode.react` (`app/`).
+- Monorepo npm workspaces (`@sporthub/shared`, `sportapp-backend`, `app`, `sporthub-ui-e2e`).
+
 ---
 
-## Còn mở (có mặc định đề xuất)
+## Các mục Q-xx đã triển khai theo mặc định (lưu vết tham chiếu)
 
-### Q-01. Data access và múi giờ — *quan trọng, chốt trước M0*
-SDD ghi "Prisma / SQL thuần". Prisma đọc/ghi `DATETIME2` như UTC → lệch 7 giờ với dữ liệu giờ VN; Prisma không mô tả được
-filtered index, CHECK phức tạp; các câu `UPDLOCK`, `sp_getapplock`, `OUTPUT inserted` phải viết raw.
-**Đề xuất:** `mssql` (tedious) + `useUTC: false` + query builder nhẹ (Kysely với dialect MSSQL) hoặc SQL tham số hóa trong
-repository. Schema quản lý bằng file SQL, không dùng `prisma migrate`.
-*Phương án B:* Prisma (introspect bằng `db pull`) cho CRUD + `$queryRaw` cho câu đồng thời, bắt buộc qua lớp chuyển đổi giờ.
+Các mục dưới đây đã áp dụng phương án đề xuất mặc định trong code (và một số đã chốt thành R-11..R-14 ở trên); chỉ cần mở lại nếu chủ dự án muốn thay đổi kiến trúc ở giai đoạn sau:
 
-### Q-02. Lưu Idempotency-Key ở đâu
-SDD yêu cầu lưu key + kết quả 24 giờ nhưng 26 bảng không có bảng nào cho việc này, kiến trúc không có Redis.
-**Đề xuất:** migration `001_idempotency_keys.sql` thêm bảng
-`IdempotencyKeys(Key UNIQUEIDENTIFIER, UserId BIGINT NULL, Method, Path, RequestHash CHAR(64), StatusCode, ResponseBody NVARCHAR(MAX), CreatedAt, ExpiresAt)`,
-PK `(Key, UserId)`; job dọn dòng hết hạn hằng giờ.
+### Q-01. Data access và múi giờ — *đã chốt thành R-11*
+SDD ghi "Prisma / SQL thuần". Đã chốt dùng `mssql` + SQL tham số hóa + `core/time.ts` (`useUTC: true`), không dùng Prisma.
 
-### Q-03. Socket.IO khi chạy PM2 cluster
-Nhiều instance thì sự kiện phát ở instance A không tới client nối vào instance B; rate limit trong bộ nhớ cũng lệch.
-**Đề xuất:** giai đoạn đầu chạy **1 instance** (PM2 fork). Khi cần scale: thêm Redis + `@socket.io/redis-adapter`.
-Job vẫn giữ `sp_getapplock` để an toàn khi scale.
+### Q-02. Lưu Idempotency-Key ở đâu — *đang áp dụng mặc định*
+Đã triển khai migration `001_idempotency_keys.sql` (`IdempotencyKeys`, PK `(IdempotencyKey, UserId)`), khóa `IN_PROGRESS` (`StatusCode = 0`) chống race condition, hash gồm `Method + Path + Body`, và job `cleanupIdempotencyKeys` dọn bản ghi hết hạn hằng giờ.
 
-### Q-04. Ô hiển thị trên lưới (2 giờ Pickleball, 90 phút bóng đá)
-SDD 1.3 và API-11 (`slotMinutes: 120`) có "ô lịch hiển thị" cấu hình theo môn, tham chiếu "mục 5.8" — mục này **không có**
-trong SDD; CSDL chỉ có `GridBlockMinutes` (CHECK 15/30/60).
-**Đề xuất:** migration thêm `Sports.DisplayBlockMinutes SMALLINT NOT NULL DEFAULT 60`, CHECK là bội số của
-`GridBlockMinutes`. Seed: Pickleball 120, Bóng đá 90, Cầu lông 60, Tennis 60, Bóng rổ 60. Khách chọn 1 hoặc nhiều ô liền
-nhau; backend vẫn kiểm tra bội số `GridBlockMinutes`.
+### Q-03. Socket.IO khi chạy PM2 cluster — *đang áp dụng mặc định*
+Chạy **1 instance** (`ecosystem.config.cjs`, PM2 fork mode). Job nền dùng `sp_getapplock` theo từng tài nguyên job (`@LockOwner = 'Transaction'`). Khi scale nhiều instance sẽ bổ sung `@socket.io/redis-adapter`.
 
-### Q-05. Cảnh báo cho nhân viên (STAFF_ALERT)
-SDD 2.6b tạo "thông báo STAFF_ALERT" cho NV và Chủ sân khi có giao dịch cần đối soát, nhưng `Notifications.Type` CHECK không
-có giá trị này và bảng mô tả là chỉ cho CUSTOMER.
-**Đề xuất:** không lưu vào `Notifications`; cảnh báo NV/OWNER bằng socket `reconciliation.created` + badge số lượng ở MH.14
-(đếm từ `BankTransactions WHERE MatchStatus = 'NEEDS_REVIEW'`).
+### Q-04. Ô hiển thị trên lưới (2 giờ Pickleball, 90 phút bóng đá) — *đang áp dụng mặc định*
+Đã thêm cột `Sports.DisplayBlockMinutes` qua migration `002_sports_display_block.sql` (Pickleball 120, Bóng đá 90, Cầu lông 60, Tennis 60, Bóng rổ 60); `BookingSlots` vẫn chia theo `GridBlockMinutes` (R-05).
 
-### Q-06. Gom nhóm ngày nghỉ "Toàn hệ thống"
-API-56 trả `groupKey` (tham chiếu mục 5.8 không tồn tại); `BranchHolidays` không có cột này.
-**Đề xuất:** migration thêm `BranchHolidays.GroupKey VARCHAR(30) NULL`; tạo với scope ALL thì các dòng chung một key.
+### Q-05. Cảnh báo cho nhân viên (STAFF_ALERT) — *đang áp dụng mặc định*
+Không lưu vào `Notifications`; phát socket `reconciliation.created` tới phòng `branch:{branchId}` và hiển thị badge số giao dịch `NEEDS_REVIEW` ở MH.14.
 
-### Q-07. Mã KM chỉ áp dụng tại quầy (`PROMO_WRONG_CHANNEL`)
-Chỉ dùng "nếu chốt bổ sung cột Channel". **Đề xuất:** chưa làm.
+### Q-06. Gom nhóm ngày nghỉ "Toàn hệ thống" — *đang áp dụng mặc định*
+Đã thêm cột `BranchHolidays.GroupKey` qua migration `003_branch_holidays_group_key.sql`.
 
-### Q-08. Kênh Email/SMS/Zalo
-**Đề xuất:** chỉ in-app + socket; interface `OutboundNotifier` với bản stub ghi log.
+### Q-07. Mã KM chỉ áp dụng tại quầy (`PROMO_WRONG_CHANNEL`) — *chưa kích hoạt*
+Chưa thêm cột `Promotions.Channel`.
 
-### Q-09. MH.14 Đối soát & Hoàn tiền
-Có trong API (67–73) nhưng không có trong danh sách màn hình SDD mục 4. **Đề xuất:** làm, vì cần cho UC 005-2c/2d, UC 012-3d,
-UC 009-3a, UC 021. Route `/owner/reconciliation`; STAFF xem tab giao dịch của cơ sở mình.
+### Q-08. Kênh Email/SMS/Zalo — *đang áp dụng mặc định*
+Chỉ in-app + socket; interface `OutboundNotifier` dùng `StubOutboundNotifier` ghi log.
 
-### Q-10. Hạng hội viên (`MemberTier`)
-SRS chưa định nghĩa hạng. **Đề xuất:** chỉ lưu/hiển thị, không có logic tự xếp hạng hay ưu đãi theo hạng.
+### Q-09. MH.14 Đối soát & Hoàn tiền — *đang áp dụng mặc định*
+Đã triển khai đầy đủ API 67–73 và màn hình `/owner/reconciliation`, `/staff/reconciliation`.
 
-### Q-11. UC 025 và UC 024
-UC 005 gọi "thực hiện UC 025 để xác thực giao dịch" nhưng không có đặc tả UC 024/025.
-**Đề xuất:** coi UC 025 là bước xác thực + khớp webhook theo SDD 2.6b; không có màn hình riêng.
+### Q-10. Hạng hội viên (`MemberTier`) — *đang áp dụng mặc định*
+Chỉ lưu/hiển thị, chưa có logic tự xếp hạng hay ưu đãi theo hạng.
 
-### Q-12. Thực hiện hoàn tiền
-SRS UC 009-3a ngụ ý hoàn qua cổng thanh toán; SDD chỉ ghi nhận `Refunds` PENDING và OWNER đánh dấu.
-**Đề xuất:** hoàn **ngoài hệ thống**, hệ thống chỉ ghi nhận (API-72/73). Không tích hợp API chi hộ.
+### Q-11. UC 025 và UC 024 — *đang áp dụng mặc định*
+UC 025 xử lý trong pipeline xác thực + khớp webhook SePay (SDD 2.6b), không có màn hình riêng.
 
-### Q-13. Lựa chọn công nghệ chưa ghi trong SDD
-**Đề xuất mặc định:** TypeScript (FE + BE), Express, zod, Vite, React Router, TanStack Query, Vitest, npm workspaces,
-pino (log), Node.js LTS ≥ 22. Đổi được trước khi bắt đầu M0.
+### Q-12. Thực hiện hoàn tiền — *đang áp dụng mặc định*
+Hoàn ngoài hệ thống, hệ thống ghi nhận `Refunds` PENDING và OWNER đánh dấu `COMPLETED`/`FAILED` (API-72/73).
 
-### Q-14. Kỳ tính tiền hoàn trong doanh thu
-SDD 3.5f trừ "Σ_kỳ Bookings.RefundAmount" nhưng không nói kỳ theo mốc nào.
-**Đề xuất:** theo `CanceledAt` trong kỳ (tiền hoàn phát sinh lúc hủy), kể cả khi `Refunds` còn PENDING.
+### Q-13. Lựa chọn công nghệ chưa ghi trong SDD — *đã chốt thành R-14*
+Đã chốt NestJS 12, TypeScript, Zod, Vite 8, React Router 7, TanStack Query, Vitest, npm workspaces, Node.js LTS ≥ 22.
 
-### Q-15. Nhận sân khi chưa tới giờ
-SDD chỉ yêu cầu "ngày chơi là hôm nay". **Đề xuất:** cho phép nhận sân sớm nhất `StartAt − 15'` và chỉ khi đơn trước
-trên sân đã xong (đã có kiểm tra `COURT_IN_USE`). Cần xác nhận con số 15 phút.
+### Q-14. Kỳ tính tiền hoàn trong doanh thu — *đang áp dụng mặc định*
+Tính trừ `Bookings.RefundAmount` theo `CanceledAt` trong kỳ (kể cả khi `Refunds` còn `PENDING`).
+
+### Q-15. Nhận sân khi chưa tới giờ — *đã chốt thành R-12*
+Đã chốt `CHECKIN_EARLY_MINUTES = 15` trong `SystemSettings` (migration `004_checkin_early_minutes.sql`).
+
+---
+
+## Rủi ro bảo mật đã chấp nhận theo đặc tả
+
+- **Phản hồi `ACCOUNT_NOT_FOUND` vs `WRONG_PASSWORD` ở API-06 (L-5):** Giữ nguyên theo đặc tả SDD API-06 (`ACCOUNT_NOT_FOUND` khi không tìm thấy SĐT/email, `WRONG_PASSWORD` khi sai mật khẩu). Có `authRateLimitMiddleware` (`10 req/phút/IP`) và khóa tạm `R-07` (`5 lần sai / 5 phút`) giảm thiểu dò tài khoản.
