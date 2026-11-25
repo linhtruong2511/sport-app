@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { BookingStateService } from '../bookings/booking-state.service.js';
 import { encodeRowVer } from '../bookings/bookings.mapper.js';
 import { BookingsRepository } from '../bookings/bookings.repository.js';
-import { sql } from '../config/database.js';
 import { CLOCK, type Clock } from '../core/clock.js';
 import { DbTransactionService, type TxContext } from '../core/db/transaction.js';
 import { AppLogger } from '../core/logger.js';
@@ -11,7 +11,6 @@ import {
   formatDateVn,
   formatTimeVn,
   fromSqlDateTime,
-  toSqlDateTime,
 } from '../core/time.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PaymentsService } from '../payments/payments.service.js';
@@ -20,6 +19,7 @@ import { PaymentsService } from '../payments/payments.service.js';
 export class LifecycleJobsService {
   constructor(
     private readonly bookingsRepo: BookingsRepository,
+    private readonly bookingState: BookingStateService,
     private readonly paymentsService: PaymentsService,
     private readonly notificationsService: NotificationsService,
     private readonly settingsService: SettingsService,
@@ -66,19 +66,8 @@ export class LifecycleJobsService {
   async autoCompleteBookings(limit = 200): Promise<number> {
     const now = this.clock.now();
     const exec = await this.txService.executor();
-    const res = await exec
-      .request()
-      .input('now', sql.DateTime2(0), toSqlDateTime(now))
-      .input('limit', sql.Int, limit)
-      .query<{ BookingCode: string }>(`
-        SELECT TOP (@limit) BookingCode
-        FROM dbo.Bookings
-        WHERE Status = 'IN_USE'
-          AND EndAt <= @now
-        ORDER BY EndAt ASC
-      `);
+    const codes = await this.bookingsRepo.findAutoCompleteCandidateCodes(exec, now, limit);
 
-    const codes = res.recordset.map((r) => r.BookingCode);
     let count = 0;
 
     for (const code of codes) {
@@ -92,36 +81,10 @@ export class LifecycleJobsService {
             return false;
           }
 
-          const bookingId = Number(row.BookingId);
-          const updateRes = await tx
-            .request()
-            .input('bookingId', sql.BigInt, bookingId)
-            .input('now', sql.DateTime2(0), toSqlDateTime(now))
-            .query<{ RowVer: Buffer }>(`
-              UPDATE dbo.Bookings
-              SET Status = 'COMPLETED',
-                  CheckedOutAt = @now,
-                  UpdatedAt = @now
-              OUTPUT inserted.RowVer
-              WHERE BookingId = @bookingId
-                AND Status = 'IN_USE'
-            `);
-
-          const newRowVer = updateRes.recordset[0]?.RowVer;
+          const newRowVer = await this.bookingState.autoCompleteInTx(tx, row, now);
           if (!newRowVer) {
             return false;
           }
-
-          await this.bookingsRepo.insertStatusHistory(tx, {
-            bookingId,
-            fromStatus: 'IN_USE',
-            toStatus: 'COMPLETED',
-            fromPaymentStatus: row.PaymentStatus,
-            toPaymentStatus: row.PaymentStatus,
-            changedBy: null,
-            changedAt: now,
-            note: 'Job autoComplete – tự hoàn thành khi hết giờ',
-          });
 
           this.pushBookingAndSlotFreeEvents(tx, {
             bookingCode: row.BookingCode,
@@ -162,22 +125,8 @@ export class LifecycleJobsService {
     const windowEnd = addMinutes(now, reminderMinutes);
 
     const exec = await this.txService.executor();
-    const res = await exec
-      .request()
-      .input('now', sql.DateTime2(0), toSqlDateTime(now))
-      .input('windowEnd', sql.DateTime2(0), toSqlDateTime(windowEnd))
-      .input('limit', sql.Int, limit)
-      .query<{ BookingCode: string }>(`
-        SELECT TOP (@limit) BookingCode
-        FROM dbo.Bookings
-        WHERE Status = 'CONFIRMED'
-          AND ReminderSentAt IS NULL
-          AND StartAt > @now
-          AND StartAt <= @windowEnd
-        ORDER BY StartAt ASC
-      `);
+    const codes = await this.bookingsRepo.findReminderCandidateCodes(exec, now, windowEnd, limit);
 
-    const codes = res.recordset.map((r) => r.BookingCode);
     let count = 0;
 
     for (const code of codes) {
@@ -194,19 +143,8 @@ export class LifecycleJobsService {
           }
 
           const bookingId = Number(row.BookingId);
-          const updateRes = await tx
-            .request()
-            .input('bookingId', sql.BigInt, bookingId)
-            .input('now', sql.DateTime2(0), toSqlDateTime(now))
-            .query(`
-              UPDATE dbo.Bookings
-              SET ReminderSentAt = @now,
-                  UpdatedAt = @now
-              WHERE BookingId = @bookingId
-                AND ReminderSentAt IS NULL
-            `);
-
-          if ((updateRes.rowsAffected[0] ?? 0) === 0) {
+          const marked = await this.bookingState.markReminderSentInTx(tx, bookingId, now);
+          if (!marked) {
             return false;
           }
 
@@ -257,24 +195,15 @@ export class LifecycleJobsService {
     historyNote: string;
     jobName: string;
   }): Promise<number> {
-    const timeCol = opts.timeColumn === 'StartAt' ? 'StartAt' : 'EndAt';
     const exec = await this.txService.executor();
-    const res = await exec
-      .request()
-      .input('paymentStatus', sql.VarChar(20), opts.paymentStatus)
-      .input('cutoff', sql.DateTime2(0), toSqlDateTime(opts.cutoff))
-      .input('limit', sql.Int, opts.limit)
-      .query<{ BookingCode: string }>(`
-        SELECT TOP (@limit) BookingCode
-        FROM dbo.Bookings
-        WHERE Status = 'CONFIRMED'
-          AND PaymentStatus = @paymentStatus
-          AND CheckedInAt IS NULL
-          AND ${timeCol} <= @cutoff
-        ORDER BY ${timeCol} ASC
-      `);
+    const codes = await this.bookingsRepo.findNoShowCandidateCodes(
+      exec,
+      opts.paymentStatus,
+      opts.timeColumn,
+      opts.cutoff,
+      opts.limit,
+    );
 
-    const codes = res.recordset.map((r) => r.BookingCode);
     let count = 0;
 
     for (const code of codes) {
@@ -297,49 +226,19 @@ export class LifecycleJobsService {
             return false;
           }
 
-          const bookingId = Number(row.BookingId);
-          const updateRes = await tx
-            .request()
-            .input('bookingId', sql.BigInt, bookingId)
-            .input('paymentStatus', sql.VarChar(20), opts.paymentStatus)
-            .input('cancelReason', sql.NVarChar(255), opts.cancelReason)
-            .input('now', sql.DateTime2(0), toSqlDateTime(opts.now))
-            .query<{ RowVer: Buffer }>(`
-              UPDATE dbo.Bookings
-              SET Status = 'CANCELED',
-                  HoldExpireAt = NULL,
-                  CancelType = 'NO_SHOW',
-                  CancelReason = @cancelReason,
-                  CanceledBy = NULL,
-                  CanceledAt = @now,
-                  RefundRate = 0,
-                  RefundAmount = 0,
-                  UpdatedAt = @now
-              OUTPUT inserted.RowVer
-              WHERE BookingId = @bookingId
-                AND Status = 'CONFIRMED'
-                AND PaymentStatus = @paymentStatus
-                AND CheckedInAt IS NULL
-            `);
-
-          const newRowVer = updateRes.recordset[0]?.RowVer;
+          const newRowVer = await this.bookingState.cancelNoShowInTx(tx, row, {
+            paymentStatus: opts.paymentStatus,
+            cancelReason: opts.cancelReason,
+            historyNote: opts.historyNote,
+            now: opts.now,
+          });
           if (!newRowVer) {
             return false;
           }
 
-          await this.bookingsRepo.deactivateBookingSlots(tx, bookingId);
-          await this.paymentsService.cancelPendingRequestsInTx(tx, bookingId);
-          await this.bookingsRepo.insertStatusHistory(tx, {
-            bookingId,
-            fromStatus: 'CONFIRMED',
-            toStatus: 'CANCELED',
-            fromPaymentStatus: opts.paymentStatus,
-            toPaymentStatus: opts.paymentStatus,
-            changedBy: null,
-            changedAt: opts.now,
-            note: opts.historyNote,
-          });
+          await this.paymentsService.cancelPendingRequestsInTx(tx, Number(row.BookingId));
 
+          // L-3: Emit RemainingAmount matching DB column (Total - Paid).
           this.pushBookingAndSlotFreeEvents(tx, {
             bookingCode: row.BookingCode,
             branchId: Number(row.BranchId),
@@ -350,7 +249,7 @@ export class LifecycleJobsService {
             status: 'CANCELED',
             paymentStatus: opts.paymentStatus,
             paidAmount: Number(row.PaidAmount),
-            remainingAmount: 0,
+            remainingAmount: Number(row.RemainingAmount),
             rowVer: newRowVer,
           });
 

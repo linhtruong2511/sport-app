@@ -150,31 +150,32 @@ export class AuthService implements TokenVerifier {
     ]);
 
     const now = this.clock.now();
+    // M-8: Read user and run CPU-intensive bcrypt.compare outside DB transaction so pool connections are not held during hashing.
+    const exec = await this.txService.executor();
+    const user = await this.repo.findByIdentity(exec, dto.identity);
+    if (!user) {
+      throw new AppError('ACCOUNT_NOT_FOUND');
+    }
+
+    if (user.Status === 'LOCKED') {
+      throw new AppError('ACCOUNT_LOCKED');
+    }
+
+    if (user.LockedUntil !== null) {
+      const lockedUntil = fromSqlDateTime(user.LockedUntil);
+      if (lockedUntil.getTime() > now.getTime()) {
+        throw new AppError('ACCOUNT_TEMP_LOCKED', {
+          details: { lockedUntil: toIsoVn(lockedUntil) },
+        });
+      }
+    }
+
+    const match = await bcrypt.compare(dto.password, user.PasswordHash);
+    const userId = Number(user.UserId);
 
     const txOutcome = await this.txService.withTransaction<
       { ok: true; data: LoginResult } | { ok: false; error: AppError }
     >(async (tx) => {
-      const user = await this.repo.findByIdentity(tx, dto.identity);
-      if (!user) {
-        throw new AppError('ACCOUNT_NOT_FOUND');
-      }
-
-      if (user.Status === 'LOCKED') {
-        throw new AppError('ACCOUNT_LOCKED');
-      }
-
-      if (user.LockedUntil !== null) {
-        const lockedUntil = fromSqlDateTime(user.LockedUntil);
-        if (lockedUntil.getTime() > now.getTime()) {
-          throw new AppError('ACCOUNT_TEMP_LOCKED', {
-            details: { lockedUntil: toIsoVn(lockedUntil) },
-          });
-        }
-      }
-
-      const match = await bcrypt.compare(dto.password, user.PasswordHash);
-      const userId = Number(user.UserId);
-
       if (!match) {
         const nextCount = user.FailedLoginCount + 1;
         if (nextCount >= maxFailed) {
@@ -313,7 +314,12 @@ export class AuthService implements TokenVerifier {
     const now = this.clock.now();
     await this.repo.incrementTokenVersion(tx, userId, now);
     await this.repo.revokeAllUserRefreshTokens(tx, userId, now);
-    this.tokenVersionCache.invalidate(userId);
+    // M-8: Invalidate cache AFTER commit so concurrent requests cannot re-populate stale tv before commit.
+    if (tx.afterCommit) {
+      tx.afterCommit.push(() => this.tokenVersionCache.invalidate(userId));
+    } else {
+      this.tokenVersionCache.invalidate(userId);
+    }
     tx.events.push({
       rooms: [`user:${userId}`],
       event: 'auth.revoked',

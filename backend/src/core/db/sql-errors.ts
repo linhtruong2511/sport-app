@@ -55,6 +55,24 @@ export function isSqlDeadlockError(err: unknown): boolean {
   return getSqlErrorNumber(err) === 1205;
 }
 
+const TRANSIENT_DB_CODES = new Set([
+  'ETIMEOUT',
+  'ETIMEDOUT',
+  'ECONNCLOSED',
+  'ECONNRESET',
+  'ESOCKET',
+  'ELOGIN',
+  'ENOTOPEN',
+]);
+
+/** Errors worth retrying later (deadlock victim, timeout, lost connection) — not data/logic errors. */
+export function isTransientDbError(err: unknown): boolean {
+  if (isSqlDeadlockError(err)) return true;
+  if (!err || typeof err !== 'object') return false;
+  const code = (err as SqlErrorLike).code;
+  return typeof code === 'string' && TRANSIENT_DB_CODES.has(code);
+}
+
 export function mapSqlError(err: unknown): never {
   if (isSqlUniqueViolation(err)) {
     const message = getSqlErrorMessage(err);

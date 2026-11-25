@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
-import { from, type Observable, of, switchMap } from 'rxjs';
+import { catchError, from, type Observable, of, switchMap, throwError } from 'rxjs';
 import { sql } from '../../config/database.js';
 import { CLOCK, type Clock } from '../clock.js';
 import { isSqlUniqueViolation } from '../db/sql-errors.js';
@@ -21,6 +21,11 @@ export const REQUIRE_IDEMPOTENCY_KEY = 'require_idempotency';
 
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const IN_PROGRESS_STATUS_CODE = 0;
+const IN_PROGRESS_LOCK_MINUTES = 5;
+const IN_PROGRESS_POLL_ATTEMPTS = 20;
+const IN_PROGRESS_POLL_DELAY_MS = 50;
 
 export const RequireIdempotency = () => SetMetadata(REQUIRE_IDEMPOTENCY_KEY, true);
 
@@ -52,7 +57,15 @@ interface IdempotencyRow {
   ResponseBody: string;
 }
 
+type AcquireOutcome =
+  | { kind: 'ACQUIRED' }
+  | { kind: 'REPLAY'; statusCode: number; responseBody: string };
+
 type RequestWithUser = Request & { user?: { userId?: number } };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -82,25 +95,33 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     const key = rawKey.toLowerCase();
     const userId = req.user?.userId ?? 0;
+    const method = req.method.toUpperCase();
+    const requestPath = (req.originalUrl ?? req.url).slice(0, 200);
+    // M-1: Include Method + Path + canonical body in RequestHash so same key cannot replay across endpoints.
     const requestHash = crypto
       .createHash('sha256')
-      .update(stableStringify(req.body ?? {}))
+      .update(`${method}:${requestPath}:${stableStringify(req.body ?? {})}`)
       .digest('hex');
 
     const now = this.clock.now();
-    const sqlNow = toSqlDateTime(now);
 
-    return from(this.findActiveRecord(key, userId, sqlNow)).pipe(
-      switchMap((existing) => {
-        if (existing) {
-          if (existing.RequestHash !== requestHash) {
-            throw new AppError('IDEMPOTENCY_CONFLICT');
-          }
-          res.status(existing.StatusCode);
-          if (existing.StatusCode === 204 || existing.ResponseBody === '') {
+    return from(
+      this.acquireOrReplay({
+        key,
+        userId,
+        method,
+        path: requestPath,
+        requestHash,
+        now,
+      }),
+    ).pipe(
+      switchMap((outcome) => {
+        if (outcome.kind === 'REPLAY') {
+          res.status(outcome.statusCode);
+          if (outcome.statusCode === 204 || outcome.responseBody === '') {
             return of(undefined);
           }
-          return of(JSON.parse(existing.ResponseBody) as unknown);
+          return of(JSON.parse(outcome.responseBody) as unknown);
         }
 
         return next.handle().pipe(
@@ -112,37 +133,144 @@ export class IdempotencyInterceptor implements NestInterceptor {
             const statusCode =
               res.statusCode !== 200
                 ? res.statusCode
-                : (explicitHttpCode ?? (req.method === 'POST' ? 201 : 200));
+                : (explicitHttpCode ?? (method === 'POST' ? 201 : 200));
 
             if (statusCode >= 200 && statusCode < 300) {
               const responseBody = body === undefined ? '' : JSON.stringify(body);
               const expiresAt = toSqlDateTime(addMinutes(this.clock.now(), 24 * 60));
-              const stored = await this.saveRecord({
+              await this.completeLock({
                 key,
                 userId,
-                method: req.method,
-                path: (req.originalUrl ?? req.url).slice(0, 200),
-                requestHash,
                 statusCode,
                 responseBody,
-                createdAt: sqlNow,
                 expiresAt,
               });
-
-              if (stored.conflict) {
-                throw new AppError('IDEMPOTENCY_CONFLICT');
-              }
-              if (stored.replayedBody !== undefined) {
-                res.status(stored.replayedStatus ?? statusCode);
-                return stored.replayedBody;
-              }
+            } else {
+              await this.releaseLock(key, userId);
             }
 
             return body;
           }),
+          catchError((err: unknown) =>
+            from(this.releaseLock(key, userId).catch(() => undefined)).pipe(
+              switchMap(() => throwError(() => err)),
+            ),
+          ),
         );
       }),
     );
+  }
+
+  async cleanupExpiredKeys(limit = 500): Promise<number> {
+    const exec = await this.db.executor();
+    const result = await exec
+      .request()
+      .input('limit', sql.Int, limit)
+      .input('now', sql.DateTime2(0), toSqlDateTime(this.clock.now()))
+      .query(`
+        DELETE TOP (@limit)
+        FROM dbo.IdempotencyKeys
+        WHERE ExpiresAt <= @now
+      `);
+    return result.rowsAffected[0] ?? 0;
+  }
+
+  private async acquireOrReplay(params: {
+    key: string;
+    userId: number;
+    method: string;
+    path: string;
+    requestHash: string;
+    now: Date;
+  }): Promise<AcquireOutcome> {
+    const sqlNow = toSqlDateTime(params.now);
+    const lockExpiresAt = toSqlDateTime(addMinutes(params.now, IN_PROGRESS_LOCK_MINUTES));
+    const exec = await this.db.executor();
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await exec
+        .request()
+        .input('key', sql.UniqueIdentifier, params.key)
+        .input('userId', sql.BigInt, params.userId)
+        .input('now', sql.DateTime2(0), sqlNow)
+        .query(`
+          DELETE FROM dbo.IdempotencyKeys
+          WHERE IdempotencyKey = @key AND UserId = @userId AND ExpiresAt <= @now
+        `);
+
+      try {
+        await exec
+          .request()
+          .input('key', sql.UniqueIdentifier, params.key)
+          .input('userId', sql.BigInt, params.userId)
+          .input('method', sql.VarChar(10), params.method)
+          .input('path', sql.VarChar(200), params.path)
+          .input('requestHash', sql.Char(64), params.requestHash)
+          .input('statusCode', sql.Int, IN_PROGRESS_STATUS_CODE)
+          .input('responseBody', sql.NVarChar(sql.MAX), '')
+          .input('createdAt', sql.DateTime2(0), sqlNow)
+          .input('expiresAt', sql.DateTime2(0), lockExpiresAt)
+          .query(`
+            INSERT INTO dbo.IdempotencyKeys
+              (IdempotencyKey, UserId, Method, Path, RequestHash, StatusCode, ResponseBody, CreatedAt, ExpiresAt)
+            VALUES
+              (@key, @userId, @method, @path, @requestHash, @statusCode, @responseBody, @createdAt, @expiresAt)
+          `);
+        return { kind: 'ACQUIRED' };
+      } catch (err) {
+        if (!isSqlUniqueViolation(err)) {
+          throw err;
+        }
+      }
+
+      let existing = await this.findActiveRecord(params.key, params.userId, sqlNow);
+      if (!existing) {
+        continue;
+      }
+      if (existing.RequestHash !== params.requestHash) {
+        throw new AppError('IDEMPOTENCY_CONFLICT');
+      }
+      if (existing.StatusCode !== IN_PROGRESS_STATUS_CODE) {
+        return {
+          kind: 'REPLAY',
+          statusCode: existing.StatusCode,
+          responseBody: existing.ResponseBody,
+        };
+      }
+
+      // Concurrent duplicate request while first request is IN_PROGRESS: wait briefly for completion.
+      for (let poll = 0; poll < IN_PROGRESS_POLL_ATTEMPTS; poll++) {
+        await sleep(IN_PROGRESS_POLL_DELAY_MS);
+        existing = await this.findActiveRecord(
+          params.key,
+          params.userId,
+          toSqlDateTime(this.clock.now()),
+        );
+        if (!existing) {
+          break;
+        }
+        if (existing.RequestHash !== params.requestHash) {
+          throw new AppError('IDEMPOTENCY_CONFLICT');
+        }
+        if (existing.StatusCode !== IN_PROGRESS_STATUS_CODE) {
+          return {
+            kind: 'REPLAY',
+            statusCode: existing.StatusCode,
+            responseBody: existing.ResponseBody,
+          };
+        }
+      }
+
+      if (existing && existing.StatusCode === IN_PROGRESS_STATUS_CODE) {
+        throw new AppError('IDEMPOTENCY_CONFLICT', {
+          message: 'Yêu cầu trước đó đang được xử lý, vui lòng thử lại sau.',
+        });
+      }
+    }
+
+    throw new AppError('IDEMPOTENCY_CONFLICT', {
+      message: 'Yêu cầu trước đó đang được xử lý, vui lòng thử lại sau.',
+    });
   }
 
   private async findActiveRecord(
@@ -164,66 +292,43 @@ export class IdempotencyInterceptor implements NestInterceptor {
     return result.recordset[0];
   }
 
-  private async saveRecord(params: {
+  private async completeLock(params: {
     key: string;
     userId: number;
-    method: string;
-    path: string;
-    requestHash: string;
     statusCode: number;
     responseBody: string;
-    createdAt: Date;
     expiresAt: Date;
-  }): Promise<{ conflict?: boolean; replayedStatus?: number; replayedBody?: unknown }> {
+  }): Promise<void> {
     const exec = await this.db.executor();
-    try {
-      await exec
-        .request()
-        .input('key', sql.UniqueIdentifier, params.key)
-        .input('userId', sql.BigInt, params.userId)
-        .input('now', sql.DateTime2(0), params.createdAt)
-        .query(`
-          DELETE FROM dbo.IdempotencyKeys
-          WHERE IdempotencyKey = @key AND UserId = @userId AND ExpiresAt <= @now
-        `);
+    await exec
+      .request()
+      .input('key', sql.UniqueIdentifier, params.key)
+      .input('userId', sql.BigInt, params.userId)
+      .input('statusCode', sql.Int, params.statusCode)
+      .input('responseBody', sql.NVarChar(sql.MAX), params.responseBody)
+      .input('expiresAt', sql.DateTime2(0), params.expiresAt)
+      .query(`
+        UPDATE dbo.IdempotencyKeys
+        SET StatusCode = @statusCode,
+            ResponseBody = @responseBody,
+            ExpiresAt = @expiresAt
+        WHERE IdempotencyKey = @key
+          AND UserId = @userId
+          AND StatusCode = ${IN_PROGRESS_STATUS_CODE}
+      `);
+  }
 
-      await exec
-        .request()
-        .input('key', sql.UniqueIdentifier, params.key)
-        .input('userId', sql.BigInt, params.userId)
-        .input('method', sql.VarChar(10), params.method)
-        .input('path', sql.VarChar(200), params.path)
-        .input('requestHash', sql.Char(64), params.requestHash)
-        .input('statusCode', sql.Int, params.statusCode)
-        .input('responseBody', sql.NVarChar(sql.MAX), params.responseBody)
-        .input('createdAt', sql.DateTime2(0), params.createdAt)
-        .input('expiresAt', sql.DateTime2(0), params.expiresAt)
-        .query(`
-          INSERT INTO dbo.IdempotencyKeys
-            (IdempotencyKey, UserId, Method, Path, RequestHash, StatusCode, ResponseBody, CreatedAt, ExpiresAt)
-          VALUES
-            (@key, @userId, @method, @path, @requestHash, @statusCode, @responseBody, @createdAt, @expiresAt)
-        `);
-      return {};
-    } catch (err) {
-      if (!isSqlUniqueViolation(err)) {
-        throw err;
-      }
-
-      const existing = await this.findActiveRecord(params.key, params.userId, params.createdAt);
-      if (!existing) {
-        return {};
-      }
-      if (existing.RequestHash !== params.requestHash) {
-        return { conflict: true };
-      }
-      return {
-        replayedStatus: existing.StatusCode,
-        replayedBody:
-          existing.StatusCode === 204 || existing.ResponseBody === ''
-            ? undefined
-            : (JSON.parse(existing.ResponseBody) as unknown),
-      };
-    }
+  private async releaseLock(key: string, userId: number): Promise<void> {
+    const exec = await this.db.executor();
+    await exec
+      .request()
+      .input('key', sql.UniqueIdentifier, key)
+      .input('userId', sql.BigInt, userId)
+      .query(`
+        DELETE FROM dbo.IdempotencyKeys
+        WHERE IdempotencyKey = @key
+          AND UserId = @userId
+          AND StatusCode = ${IN_PROGRESS_STATUS_CODE}
+      `);
   }
 }

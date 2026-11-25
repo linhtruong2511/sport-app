@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { ZodValidationPipe } from '../core/validation/zod-validation.pipe.js';
 import {
@@ -8,6 +8,7 @@ import {
   sepayWebhookSchema,
 } from './payments.schemas.js';
 import { PaymentsService } from './payments.service.js';
+import { SepayWebhookAuthGuard } from './sepay-webhook-auth.guard.js';
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
@@ -16,6 +17,7 @@ export class WebhooksController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post(':provider')
+  @UseGuards(SepayWebhookAuthGuard)
   @HttpCode(HttpStatus.OK)
   async handleBankWebhook(
     @Param(new ZodValidationPipe(providerParamSchema)) params: ProviderParamDto,

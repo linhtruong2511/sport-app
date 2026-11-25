@@ -3,7 +3,6 @@ import type { BlockType, BranchStatus, CourtStatus } from '@sporthub/shared/enum
 import type { BookingRow } from '../bookings/bookings.mapper.js';
 import { sql } from '../config/database.js';
 import type { DbExecutor, TxContext } from '../core/db/transaction.js';
-import { AppError } from '../core/errors.js';
 import { fromSqlDate, fromSqlDateTime, fromSqlTime, toSqlDate, toSqlDateTime } from '../core/time.js';
 
 export interface ActiveCourtBlockRow {
@@ -388,44 +387,6 @@ export class AffectedBookingsRepository {
           AND (EndAt IS NULL OR EndAt > @startAt)
       `);
     return res.recordset.length > 0;
-  }
-
-  async updateBookingScheduleForTransfer(
-    tx: TxContext,
-    input: {
-      bookingId: number;
-      expectedVersion: Buffer;
-      newCourtId: number;
-      newStartAt: Date;
-      newEndAt: Date;
-      now: Date;
-    },
-  ): Promise<Buffer> {
-    const res = await tx
-      .request()
-      .input('bookingId', sql.BigInt, input.bookingId)
-      .input('ver', sql.VarBinary(8), input.expectedVersion)
-      .input('newCourtId', sql.Int, input.newCourtId)
-      .input('newStartAt', sql.DateTime2(0), toSqlDateTime(input.newStartAt))
-      .input('newEndAt', sql.DateTime2(0), toSqlDateTime(input.newEndAt))
-      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
-      .query<{ RowVer: Buffer }>(`
-        UPDATE dbo.Bookings
-        SET CourtId = @newCourtId,
-            StartAt = @newStartAt,
-            EndAt = @newEndAt,
-            ReminderSentAt = NULL,
-            UpdatedAt = @now
-        OUTPUT inserted.RowVer
-        WHERE BookingId = @bookingId
-          AND RowVer = @ver
-          AND Status IN ('PENDING_PAYMENT', 'CONFIRMED')
-      `);
-
-    if (!res.recordset[0]) {
-      throw new AppError('BOOKING_STATE_CHANGED');
-    }
-    return res.recordset[0].RowVer;
   }
 
   async insertBookingTransfer(

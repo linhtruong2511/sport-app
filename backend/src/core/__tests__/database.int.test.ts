@@ -152,7 +152,7 @@ describe('core/database integration', () => {
     expect(codes.kh).toMatch(/^KH\d{6,}$/);
   });
 
-  it('reads all 9 seeded keys from dbo.SystemSettings', async () => {
+  it('reads all 10 seeded keys from dbo.SystemSettings', async () => {
     settingsService.invalidate();
     const all = await settingsService.getAll();
     const expectedKeys = [
@@ -165,11 +165,13 @@ describe('core/database integration', () => {
       'LOGIN_MAX_FAILED',
       'LOGIN_LOCK_MINUTES',
       'QR_EXPIRE_MINUTES',
+      'CHECKIN_EARLY_MINUTES',
     ];
     for (const key of expectedKeys) {
       expect(all[key]).toBeDefined();
     }
     expect(await settingsService.getInt('BOOKING_HOLD_MINUTES')).toBe(10);
+    expect(await settingsService.getInt('CHECKIN_EARLY_MINUTES')).toBe(15);
   });
 
   it('serves GET /api/v1/health and GET /api/v1/health/db with envelope and serverTime', async () => {

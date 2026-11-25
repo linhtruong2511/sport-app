@@ -13,7 +13,7 @@ import { sql } from '../config/database.js';
 import { mapSqlError } from '../core/db/sql-errors.js';
 import type { DbExecutor, TxContext } from '../core/db/transaction.js';
 import { AppError } from '../core/errors.js';
-import { toSqlDate, toSqlDateTime } from '../core/time.js';
+import { fromSqlDateTime, toSqlDate, toSqlDateTime } from '../core/time.js';
 import type {
   BookingPaymentRow,
   BookingPriceLineRow,
@@ -679,5 +679,262 @@ export class BookingsRepository {
       `);
 
     return res.recordset.map((r) => r.BookingCode);
+  }
+
+  async findAutoCompleteCandidateCodes(
+    exec: DbExecutor,
+    now: Date,
+    limit: number,
+  ): Promise<string[]> {
+    const res = await exec
+      .request()
+      .input('now', sql.DateTime2(0), toSqlDateTime(now))
+      .input('limit', sql.Int, limit)
+      .query<{ BookingCode: string }>(`
+        SELECT TOP (@limit) BookingCode
+        FROM dbo.Bookings
+        WHERE Status = 'IN_USE'
+          AND EndAt <= @now
+        ORDER BY EndAt ASC
+      `);
+
+    return res.recordset.map((r) => r.BookingCode);
+  }
+
+  async findReminderCandidateCodes(
+    exec: DbExecutor,
+    now: Date,
+    windowEnd: Date,
+    limit: number,
+  ): Promise<string[]> {
+    const res = await exec
+      .request()
+      .input('now', sql.DateTime2(0), toSqlDateTime(now))
+      .input('windowEnd', sql.DateTime2(0), toSqlDateTime(windowEnd))
+      .input('limit', sql.Int, limit)
+      .query<{ BookingCode: string }>(`
+        SELECT TOP (@limit) BookingCode
+        FROM dbo.Bookings
+        WHERE Status = 'CONFIRMED'
+          AND ReminderSentAt IS NULL
+          AND StartAt > @now
+          AND StartAt <= @windowEnd
+        ORDER BY StartAt ASC
+      `);
+
+    return res.recordset.map((r) => r.BookingCode);
+  }
+
+  async findNoShowCandidateCodes(
+    exec: DbExecutor,
+    paymentStatus: 'DEPOSITED' | 'PAID',
+    timeColumn: 'StartAt' | 'EndAt',
+    cutoff: Date,
+    limit: number,
+  ): Promise<string[]> {
+    const timeCol = timeColumn === 'StartAt' ? 'StartAt' : 'EndAt';
+    const res = await exec
+      .request()
+      .input('paymentStatus', sql.VarChar(20), paymentStatus)
+      .input('cutoff', sql.DateTime2(0), toSqlDateTime(cutoff))
+      .input('limit', sql.Int, limit)
+      .query<{ BookingCode: string }>(`
+        SELECT TOP (@limit) BookingCode
+        FROM dbo.Bookings
+        WHERE Status = 'CONFIRMED'
+          AND PaymentStatus = @paymentStatus
+          AND CheckedInAt IS NULL
+          AND ${timeCol} <= @cutoff
+        ORDER BY ${timeCol} ASC
+      `);
+
+    return res.recordset.map((r) => r.BookingCode);
+  }
+
+  async updateBookingCheckedIn(
+    tx: TxContext,
+    input: { bookingId: number; expectedVersion: Buffer; now: Date },
+  ): Promise<Buffer> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, input.bookingId)
+      .input('ver', sql.VarBinary(8), input.expectedVersion)
+      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
+      .query<{ RowVer: Buffer }>(`
+        UPDATE dbo.Bookings
+        SET Status = 'IN_USE',
+            CheckedInAt = @now,
+            UpdatedAt = @now
+        OUTPUT inserted.RowVer
+        WHERE BookingId = @bookingId
+          AND RowVer = @ver
+          AND Status = 'CONFIRMED'
+      `);
+
+    if (!res.recordset[0]) {
+      throw new AppError('BOOKING_STATE_CHANGED');
+    }
+
+    return res.recordset[0].RowVer;
+  }
+
+  async updateBookingCompleted(
+    tx: TxContext,
+    input: { bookingId: number; expectedVersion: Buffer; now: Date },
+  ): Promise<Buffer> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, input.bookingId)
+      .input('ver', sql.VarBinary(8), input.expectedVersion)
+      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
+      .query<{ RowVer: Buffer }>(`
+        UPDATE dbo.Bookings
+        SET Status = 'COMPLETED',
+            CheckedOutAt = @now,
+            UpdatedAt = @now
+        OUTPUT inserted.RowVer
+        WHERE BookingId = @bookingId
+          AND RowVer = @ver
+          AND Status = 'IN_USE'
+      `);
+
+    if (!res.recordset[0]) {
+      throw new AppError('BOOKING_STATE_CHANGED');
+    }
+
+    return res.recordset[0].RowVer;
+  }
+
+  async updateBookingAutoCompleted(
+    tx: TxContext,
+    bookingId: number,
+    now: Date,
+  ): Promise<Buffer | null> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('now', sql.DateTime2(0), toSqlDateTime(now))
+      .query<{ RowVer: Buffer }>(`
+        UPDATE dbo.Bookings
+        SET Status = 'COMPLETED',
+            CheckedOutAt = @now,
+            UpdatedAt = @now
+        OUTPUT inserted.RowVer
+        WHERE BookingId = @bookingId
+          AND Status = 'IN_USE'
+      `);
+
+    return res.recordset[0]?.RowVer ?? null;
+  }
+
+  async updateBookingNoShowCanceled(
+    tx: TxContext,
+    input: {
+      bookingId: number;
+      paymentStatus: 'DEPOSITED' | 'PAID';
+      cancelReason: string;
+      now: Date;
+    },
+  ): Promise<Buffer | null> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, input.bookingId)
+      .input('paymentStatus', sql.VarChar(20), input.paymentStatus)
+      .input('cancelReason', sql.NVarChar(255), input.cancelReason)
+      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
+      .query<{ RowVer: Buffer }>(`
+        UPDATE dbo.Bookings
+        SET Status = 'CANCELED',
+            HoldExpireAt = NULL,
+            CancelType = 'NO_SHOW',
+            CancelReason = @cancelReason,
+            CanceledBy = NULL,
+            CanceledAt = @now,
+            RefundRate = 0,
+            RefundAmount = 0,
+            UpdatedAt = @now
+        OUTPUT inserted.RowVer
+        WHERE BookingId = @bookingId
+          AND Status = 'CONFIRMED'
+          AND PaymentStatus = @paymentStatus
+          AND CheckedInAt IS NULL
+      `);
+
+    return res.recordset[0]?.RowVer ?? null;
+  }
+
+  async markBookingReminderSent(
+    tx: TxContext,
+    bookingId: number,
+    now: Date,
+  ): Promise<boolean> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('now', sql.DateTime2(0), toSqlDateTime(now))
+      .query(`
+        UPDATE dbo.Bookings
+        SET ReminderSentAt = @now,
+            UpdatedAt = @now
+        WHERE BookingId = @bookingId
+          AND ReminderSentAt IS NULL
+      `);
+
+    return (res.rowsAffected[0] ?? 0) > 0;
+  }
+
+  async updateBookingScheduleForTransfer(
+    tx: TxContext,
+    input: {
+      bookingId: number;
+      expectedVersion: Buffer;
+      newCourtId: number;
+      newStartAt: Date;
+      newEndAt: Date;
+      now: Date;
+    },
+  ): Promise<Buffer> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, input.bookingId)
+      .input('ver', sql.VarBinary(8), input.expectedVersion)
+      .input('newCourtId', sql.Int, input.newCourtId)
+      .input('newStartAt', sql.DateTime2(0), toSqlDateTime(input.newStartAt))
+      .input('newEndAt', sql.DateTime2(0), toSqlDateTime(input.newEndAt))
+      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
+      .query<{ RowVer: Buffer }>(`
+        UPDATE dbo.Bookings
+        SET CourtId = @newCourtId,
+            StartAt = @newStartAt,
+            EndAt = @newEndAt,
+            ReminderSentAt = NULL,
+            UpdatedAt = @now
+        OUTPUT inserted.RowVer
+        WHERE BookingId = @bookingId
+          AND RowVer = @ver
+          AND Status IN ('PENDING_PAYMENT', 'CONFIRMED')
+      `);
+
+    if (!res.recordset[0]) {
+      throw new AppError('BOOKING_STATE_CHANGED');
+    }
+    return res.recordset[0].RowVer;
+  }
+
+  async deactivateFutureSlots(tx: TxContext, bookingId: number, now: Date): Promise<Date[]> {
+    const res = await tx
+      .request()
+      .input('bookingId', sql.BigInt, bookingId)
+      .input('now', sql.DateTime2(0), toSqlDateTime(now))
+      .query<{ SlotStart: Date | string }>(`
+        UPDATE dbo.BookingSlots
+        SET IsActive = 0
+        OUTPUT deleted.SlotStart
+        WHERE BookingId = @bookingId
+          AND IsActive = 1
+          AND SlotStart >= @now
+      `);
+
+    return res.recordset.map((r) => fromSqlDateTime(r.SlotStart));
   }
 }

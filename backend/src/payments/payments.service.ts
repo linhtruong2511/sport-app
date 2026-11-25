@@ -1,5 +1,4 @@
-import crypto from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   BookingStatus,
   PaymentPurpose,
@@ -11,11 +10,12 @@ import type { PaymentRequestDto } from '@sporthub/shared/types';
 import { BookingStateService } from '../bookings/booking-state.service.js';
 import { computeIsOverdue, encodeRowVer } from '../bookings/bookings.mapper.js';
 import { BookingsRepository } from '../bookings/bookings.repository.js';
-import { env } from '../config/env.js';
 import type { AuthenticatedUser } from '../core/auth/auth.types.js';
 import { CLOCK, type Clock } from '../core/clock.js';
+import { isTransientDbError } from '../core/db/sql-errors.js';
 import { DbTransactionService, type TxContext } from '../core/db/transaction.js';
 import { AppError } from '../core/errors.js';
+import { AppLogger } from '../core/logger.js';
 import { SettingsService } from '../core/settings.service.js';
 import { addMinutes, formatDateVn, formatTimeVn, fromSqlDateTime, toIsoVn } from '../core/time.js';
 import {
@@ -26,6 +26,7 @@ import {
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { type PaymentRequestRow, PaymentsRepository } from './payments.repository.js';
 import type { CreatePaymentRequestDto, SepayWebhookDto } from './payments.schemas.js';
+import { verifySepayApiKeyHeader } from './sepay-webhook-auth.guard.js';
 import { buildVietQrPayload } from './vietqr.js';
 
 export interface CreatePaymentRequestInTxInput {
@@ -102,6 +103,7 @@ export class PaymentsService {
     private readonly settingsService: SettingsService,
     @Inject(BANK_GATEWAY) private readonly bankGateway: BankGateway,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() private readonly logger?: AppLogger,
   ) {}
 
   async createPaymentRequestInTx(
@@ -285,30 +287,16 @@ export class PaymentsService {
     rawBody: string | undefined,
     parsedBody: SepayWebhookDto,
   ): Promise<{ success: true }> {
-    this.verifySepayApiKey(authHeader);
+    verifySepayApiKeyHeader(authHeader);
 
     const rawPayloadStr = ensureValidJsonString(rawBody, parsedBody);
     await this.processIncomingBankTransaction('SEPAY', parsedBody, rawPayloadStr);
     return { success: true };
   }
 
-  private verifySepayApiKey(authHeader: string | undefined): void {
-    if (!authHeader) {
-      throw new AppError('UNAUTHENTICATED', { message: 'Thiếu xác thực webhook.' });
-    }
-    const match = /^Apikey\s+(.+)$/i.exec(authHeader.trim());
-    if (!match) {
-      throw new AppError('UNAUTHENTICATED', { message: 'Định dạng xác thực webhook không hợp lệ.' });
-    }
-    const provided = Buffer.from(match[1].trim(), 'utf8');
-    const expected = Buffer.from(env.sepayWebhookApiKey, 'utf8');
-    if (provided.length !== expected.length || !crypto.timingSafeEqual(provided, expected)) {
-      throw new AppError('UNAUTHENTICATED', { message: 'API key webhook không chính xác.' });
-    }
-  }
-
   /**
    * Shared bank transaction ingestion & matching pipeline (SDD 5.6, UC 005, UC 012, API-17).
+   * C-4 / Bất biến 9: Tx 1 commits BankTransactions first so matching errors never lose the raw txn.
    */
   async processIncomingBankTransaction(
     provider: string,
@@ -329,9 +317,9 @@ export class PaymentsService {
 
     const safeRawPayload = ensureValidJsonString(rawPayloadStr, payload);
 
-    return this.txService.withTransaction(async (tx) => {
-      // 1. Always insert BankTransactions first; duplicate (Provider, ProviderTxnId) -> idempotent 200.
-      const insertRes = await this.repo.insertBankTransaction(tx, {
+    // Transaction 1: Persist BankTransactions first; duplicate (Provider, ProviderTxnId) -> idempotent 200.
+    const insertRes = await this.txService.withTransaction((tx) =>
+      this.repo.insertBankTransaction(tx, {
         provider,
         providerTxnId: String(payload.id),
         accountNo: payload.accountNumber,
@@ -340,219 +328,279 @@ export class PaymentsService {
         transactionAt,
         rawPayload: safeRawPayload,
         receivedAt: now,
-      });
+      }),
+    );
 
-      if (insertRes.duplicated || insertRes.bankTxnId === null) {
+    let bankTxnId: number;
+    if (insertRes.duplicated || insertRes.bankTxnId === null) {
+      // Retry of a delivery whose matching step never finished (crash / transient DB error → 5xx):
+      // resume matching while the txn is still PENDING; any other status means it was already handled.
+      const exec = await this.txService.executor();
+      const existing = await this.repo.findBankTransactionByProviderTxn(
+        exec,
+        provider,
+        String(payload.id),
+      );
+      if (!existing || existing.matchStatus !== 'PENDING') {
         return { duplicated: true, matched: false };
       }
+      bankTxnId = existing.bankTxnId;
+    } else {
+      bankTxnId = insertRes.bankTxnId;
+    }
 
-      const bankTxnId = insertRes.bankTxnId;
-
-      if (payload.transferType.toLowerCase() === 'out') {
-        await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
-          matchStatus: 'IGNORED',
-          matchedBookingId: null,
-        });
-        return { duplicated: false, matched: false };
-      }
-
-      const markNeedsReview = async (
-        issue: ReconciliationIssue,
-        matchedBookingId: number | null,
-        eventBranchId: number | null,
-        bookingCodeForEvent: string | null,
-      ) => {
-        await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
-          matchStatus: 'NEEDS_REVIEW',
-          matchedBookingId,
-        });
-        if (eventBranchId !== null) {
-          tx.events.push({
-            rooms: [`branch:${eventBranchId}`],
-            event: 'reconciliation.created',
-            payload: {
-              bankTxnId,
-              issue,
-              amount: payload.transferAmount,
-              bookingCode: bookingCodeForEvent,
-            },
-          });
-        }
-        return { duplicated: false, matched: false };
-      };
-
-      const normalizedContent = (payload.content ?? '').replace(/\s+/g, '').toUpperCase();
-      const codeMatch = /BK\d{10,}/.exec(normalizedContent);
-      const matchedCode = codeMatch && codeMatch[0].length <= 20 ? codeMatch[0] : null;
-
-      const branchByAccount = await this.repo.findBranchByBankAccountNo(tx, payload.accountNumber);
-      const fallbackBranchId = branchByAccount ? Number(branchByAccount.BranchId) : null;
-
-      if (!matchedCode) {
-        return markNeedsReview('UNKNOWN_CONTENT', null, fallbackBranchId, null);
-      }
-
-      const booking = await this.bookingState.lockBookingByCode(tx, matchedCode);
-      if (!booking) {
-        return markNeedsReview('UNKNOWN_CONTENT', null, fallbackBranchId, null);
-      }
-
-      const bookingId = Number(booking.BookingId);
-      const bookingBranchId = Number(booking.BranchId);
-      const bookingBranchBank = await this.repo.getBranchBankInfo(tx, bookingBranchId);
-
-      if (
-        !bookingBranchBank?.BankAccountNo ||
-        bookingBranchBank.BankAccountNo !== payload.accountNumber
-      ) {
-        return markNeedsReview('ACCOUNT_MISMATCH', bookingId, bookingBranchId, booking.BookingCode);
-      }
-
-      let purpose: PaymentPurpose;
-      let historyNote: string;
-
-      if (booking.Status === 'PENDING_PAYMENT') {
-        const holdExpireAt =
-          booking.HoldExpireAt !== null ? fromSqlDateTime(booking.HoldExpireAt) : null;
-        if (holdExpireAt && now.getTime() > holdExpireAt.getTime()) {
-          return markNeedsReview('LATE_PAYMENT', bookingId, bookingBranchId, booking.BookingCode);
-        }
-        if (payload.transferAmount !== Number(booking.AmountDueNow)) {
-          return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
-        }
-        purpose = booking.PaymentOption === 'DEPOSIT' ? 'DEPOSIT' : 'FULL';
-        historyNote =
-          purpose === 'DEPOSIT'
-            ? 'Webhook SEPAY – nhận tiền cọc'
-            : 'Webhook SEPAY – khớp giao dịch';
-      } else if (booking.Status === 'CONFIRMED' && booking.PaymentStatus === 'DEPOSITED') {
-        if (payload.transferAmount !== Number(booking.RemainingAmount)) {
-          return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
-        }
-        purpose = 'REMAINING';
-        historyNote = 'Webhook SEPAY – khớp giao dịch tất toán';
-      } else if (booking.Status === 'EXPIRED' || booking.Status === 'CANCELED') {
-        return markNeedsReview('LATE_PAYMENT', bookingId, bookingBranchId, booking.BookingCode);
-      } else {
-        return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
-      }
-
-      const pendingReq = await this.repo.findPendingRequestByBookingId(tx, bookingId);
-      if (pendingReq) {
-        await this.repo.markRequestPaid(tx, Number(pendingReq.RequestId));
-      }
-
-      const paymentResult = await this.bookingState.applyPaymentInTx(tx, booking, {
-        purpose,
-        method: 'BANK_TRANSFER',
-        channel: booking.Channel,
-        amount: payload.transferAmount,
-        requestId: pendingReq ? Number(pendingReq.RequestId) : null,
-        bankTxnId,
-        collectedBy: null,
-        paidAt: now,
-        historyNote,
-      });
-
-      await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
-        matchStatus: 'MATCHED',
-        matchedBookingId: bookingId,
-      });
-
-      const customerUserId =
-        booking.CustomerUserId !== null ? Number(booking.CustomerUserId) : null;
-
-      if (customerUserId !== null) {
-        const formattedAmount = formatVnd(payload.transferAmount);
-        const title =
-          purpose === 'DEPOSIT'
-            ? 'Đã nhận tiền cọc đặt sân'
-            : purpose === 'REMAINING'
-              ? 'Thanh toán phần còn lại thành công'
-              : 'Thanh toán đặt sân thành công';
-        const body =
-          purpose === 'DEPOSIT'
-            ? `Đơn ${booking.BookingCode} đã được xác nhận đặt cọc ${formattedAmount}đ.`
-            : purpose === 'REMAINING'
-              ? `Đơn ${booking.BookingCode} đã tất toán ${formattedAmount}đ.`
-              : `Đơn ${booking.BookingCode} đã được xác nhận thanh toán đủ ${formattedAmount}đ.`;
-
-        await this.notificationsService.createNotificationInTx(tx, {
-          userId: customerUserId,
-          type: 'PAYMENT_RESULT',
-          title,
-          body,
-          linkType: 'BOOKING',
-          linkRef: String(bookingId),
-          bookingCode: booking.BookingCode,
-        });
-      }
-
-      const targetRooms = [
-        `booking:${booking.BookingCode}`,
-        `branch:${bookingBranchId}`,
-        ...(customerUserId !== null ? [`user:${customerUserId}`] : []),
-      ];
-
-      tx.events.push({
-        rooms: targetRooms,
-        event: 'booking.paid',
-        payload: {
-          bookingCode: booking.BookingCode,
-          paymentCode: paymentResult.paymentCode,
-          purpose,
-          method: 'BANK_TRANSFER',
-          amount: payload.transferAmount,
-          status: paymentResult.nextStatus,
-          paymentStatus: paymentResult.nextPaymentStatus,
-        },
-      });
-
-      const startAtDate = fromSqlDateTime(booking.StartAt);
-      const endAtDate = fromSqlDateTime(booking.EndAt);
-      const isOverdue = computeIsOverdue(
-        paymentResult.nextStatus,
-        booking.CheckedInAt !== null ? fromSqlDateTime(booking.CheckedInAt) : null,
-        startAtDate,
-        now,
-        noShowGraceMinutes,
-      );
-
-      tx.events.push({
-        rooms: targetRooms,
-        event: 'booking.updated',
-        payload: {
-          bookingCode: booking.BookingCode,
-          status: paymentResult.nextStatus,
-          paymentStatus: paymentResult.nextPaymentStatus,
-          paidAmount: paymentResult.paidAmount,
-          remainingAmount: paymentResult.remainingAmount,
-          isOverdue,
-          version: paymentResult.version,
-        },
-      });
-
-      if (
-        paymentResult.previousStatus === 'PENDING_PAYMENT' &&
-        paymentResult.nextStatus === 'CONFIRMED'
-      ) {
-        const slotDate = formatDateVn(startAtDate);
+    const pushNeedsReviewEvent = (
+      tx: TxContext,
+      issue: ReconciliationIssue,
+      eventBranchId: number | null,
+      bookingCodeForEvent: string | null,
+    ) => {
+      if (eventBranchId !== null) {
         tx.events.push({
-          rooms: [`availability:${bookingBranchId}:${slotDate}`, `branch:${bookingBranchId}`],
-          event: 'slot.updated',
+          rooms: [`branch:${eventBranchId}`],
+          event: 'reconciliation.created',
           payload: {
-            branchId: bookingBranchId,
-            courtId: Number(booking.CourtId),
-            date: slotDate,
-            startTime: formatTimeVn(startAtDate),
-            endTime: formatTimeVn(endAtDate),
-            state: 'BOOKED',
+            bankTxnId,
+            issue,
+            amount: payload.transferAmount,
+            bookingCode: bookingCodeForEvent,
           },
         });
       }
+    };
 
-      return { duplicated: false, matched: true };
-    });
+    try {
+      // Transaction 2: Match and apply payment (or classify as IGNORED / NEEDS_REVIEW).
+      return await this.txService.withTransaction(async (tx) => {
+        // Serialize concurrent deliveries of the same txn: only one may leave PENDING.
+        if (!(await this.repo.lockPendingBankTransaction(tx, bankTxnId))) {
+          return { duplicated: true, matched: false };
+        }
+
+        if (payload.transferType.toLowerCase() === 'out') {
+          await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
+            matchStatus: 'IGNORED',
+            matchedBookingId: null,
+          });
+          return { duplicated: false, matched: false };
+        }
+
+        const markNeedsReview = async (
+          issue: ReconciliationIssue,
+          matchedBookingId: number | null,
+          eventBranchId: number | null,
+          bookingCodeForEvent: string | null,
+        ) => {
+          await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
+            matchStatus: 'NEEDS_REVIEW',
+            matchedBookingId,
+          });
+          pushNeedsReviewEvent(tx, issue, eventBranchId, bookingCodeForEvent);
+          return { duplicated: false, matched: false };
+        };
+
+        const normalizedContent = (payload.content ?? '').replace(/\s+/g, '').toUpperCase();
+        const codeMatch = /BK\d{10,}/.exec(normalizedContent);
+        const matchedCode = codeMatch && codeMatch[0].length <= 20 ? codeMatch[0] : null;
+
+        const branchByAccount = await this.repo.findBranchByBankAccountNo(tx, payload.accountNumber);
+        const fallbackBranchId = branchByAccount ? Number(branchByAccount.BranchId) : null;
+
+        if (!matchedCode) {
+          return markNeedsReview('UNKNOWN_CONTENT', null, fallbackBranchId, null);
+        }
+
+        const booking = await this.bookingState.lockBookingByCode(tx, matchedCode);
+        if (!booking) {
+          return markNeedsReview('UNKNOWN_CONTENT', null, fallbackBranchId, null);
+        }
+
+        const bookingId = Number(booking.BookingId);
+        const bookingBranchId = Number(booking.BranchId);
+        const bookingBranchBank = await this.repo.getBranchBankInfo(tx, bookingBranchId);
+
+        if (
+          !bookingBranchBank?.BankAccountNo ||
+          bookingBranchBank.BankAccountNo !== payload.accountNumber
+        ) {
+          return markNeedsReview('ACCOUNT_MISMATCH', bookingId, bookingBranchId, booking.BookingCode);
+        }
+
+        let purpose: PaymentPurpose;
+        let historyNote: string;
+
+        if (booking.Status === 'PENDING_PAYMENT') {
+          const holdExpireAt =
+            booking.HoldExpireAt !== null ? fromSqlDateTime(booking.HoldExpireAt) : null;
+          if (holdExpireAt && now.getTime() > holdExpireAt.getTime()) {
+            return markNeedsReview('LATE_PAYMENT', bookingId, bookingBranchId, booking.BookingCode);
+          }
+          if (payload.transferAmount !== Number(booking.AmountDueNow)) {
+            return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
+          }
+          purpose = booking.PaymentOption === 'DEPOSIT' ? 'DEPOSIT' : 'FULL';
+          historyNote =
+            purpose === 'DEPOSIT'
+              ? 'Webhook SEPAY – nhận tiền cọc'
+              : 'Webhook SEPAY – khớp giao dịch';
+        } else if (booking.Status === 'CONFIRMED' && booking.PaymentStatus === 'DEPOSITED') {
+          if (payload.transferAmount !== Number(booking.RemainingAmount)) {
+            return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
+          }
+          purpose = 'REMAINING';
+          historyNote = 'Webhook SEPAY – khớp giao dịch tất toán';
+        } else if (booking.Status === 'EXPIRED' || booking.Status === 'CANCELED') {
+          return markNeedsReview('LATE_PAYMENT', bookingId, bookingBranchId, booking.BookingCode);
+        } else {
+          return markNeedsReview('WRONG_AMOUNT', bookingId, bookingBranchId, booking.BookingCode);
+        }
+
+        const pendingReq = await this.repo.findPendingRequestByBookingId(tx, bookingId);
+        if (pendingReq) {
+          await this.repo.markRequestPaid(tx, Number(pendingReq.RequestId));
+        }
+
+        const paymentResult = await this.bookingState.applyPaymentInTx(tx, booking, {
+          purpose,
+          method: 'BANK_TRANSFER',
+          channel: booking.Channel,
+          amount: payload.transferAmount,
+          requestId: pendingReq ? Number(pendingReq.RequestId) : null,
+          bankTxnId,
+          collectedBy: null,
+          paidAt: now,
+          historyNote,
+        });
+
+        await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
+          matchStatus: 'MATCHED',
+          matchedBookingId: bookingId,
+        });
+
+        const customerUserId =
+          booking.CustomerUserId !== null ? Number(booking.CustomerUserId) : null;
+
+        if (customerUserId !== null) {
+          const formattedAmount = formatVnd(payload.transferAmount);
+          const title =
+            purpose === 'DEPOSIT'
+              ? 'Đã nhận tiền cọc đặt sân'
+              : purpose === 'REMAINING'
+                ? 'Thanh toán phần còn lại thành công'
+                : 'Thanh toán đặt sân thành công';
+          const body =
+            purpose === 'DEPOSIT'
+              ? `Đơn ${booking.BookingCode} đã được xác nhận đặt cọc ${formattedAmount}đ.`
+              : purpose === 'REMAINING'
+                ? `Đơn ${booking.BookingCode} đã tất toán ${formattedAmount}đ.`
+                : `Đơn ${booking.BookingCode} đã được xác nhận thanh toán đủ ${formattedAmount}đ.`;
+
+          await this.notificationsService.createNotificationInTx(tx, {
+            userId: customerUserId,
+            type: 'PAYMENT_RESULT',
+            title,
+            body,
+            linkType: 'BOOKING',
+            linkRef: String(bookingId),
+            bookingCode: booking.BookingCode,
+          });
+        }
+
+        const targetRooms = [
+          `booking:${booking.BookingCode}`,
+          `branch:${bookingBranchId}`,
+          ...(customerUserId !== null ? [`user:${customerUserId}`] : []),
+        ];
+
+        tx.events.push({
+          rooms: targetRooms,
+          event: 'booking.paid',
+          payload: {
+            bookingCode: booking.BookingCode,
+            paymentCode: paymentResult.paymentCode,
+            purpose,
+            method: 'BANK_TRANSFER',
+            amount: payload.transferAmount,
+            status: paymentResult.nextStatus,
+            paymentStatus: paymentResult.nextPaymentStatus,
+          },
+        });
+
+        const startAtDate = fromSqlDateTime(booking.StartAt);
+        const endAtDate = fromSqlDateTime(booking.EndAt);
+        const isOverdue = computeIsOverdue(
+          paymentResult.nextStatus,
+          booking.CheckedInAt !== null ? fromSqlDateTime(booking.CheckedInAt) : null,
+          startAtDate,
+          now,
+          noShowGraceMinutes,
+        );
+
+        tx.events.push({
+          rooms: targetRooms,
+          event: 'booking.updated',
+          payload: {
+            bookingCode: booking.BookingCode,
+            status: paymentResult.nextStatus,
+            paymentStatus: paymentResult.nextPaymentStatus,
+            paidAmount: paymentResult.paidAmount,
+            remainingAmount: paymentResult.remainingAmount,
+            isOverdue,
+            version: paymentResult.version,
+          },
+        });
+
+        if (
+          paymentResult.previousStatus === 'PENDING_PAYMENT' &&
+          paymentResult.nextStatus === 'CONFIRMED'
+        ) {
+          const slotDate = formatDateVn(startAtDate);
+          tx.events.push({
+            rooms: [`availability:${bookingBranchId}:${slotDate}`, `branch:${bookingBranchId}`],
+            event: 'slot.updated',
+            payload: {
+              branchId: bookingBranchId,
+              courtId: Number(booking.CourtId),
+              date: slotDate,
+              startTime: formatTimeVn(startAtDate),
+              endTime: formatTimeVn(endAtDate),
+              state: 'BOOKED',
+            },
+          });
+        }
+
+        return { duplicated: false, matched: true };
+      });
+    } catch (err) {
+      // Transient DB failures (deadlock after retries, timeout, lost connection): keep the txn PENDING and
+      // return 5xx so SePay redelivers and matching is resumed, instead of forcing a manual review.
+      if (isTransientDbError(err)) {
+        this.logger?.error('Bank transaction matching hit a transient DB error; leaving PENDING for retry', {
+          context: 'PaymentsService',
+          bankTxnId,
+          error: err,
+        });
+        throw err;
+      }
+
+      this.logger?.error('Bank transaction matching failed; routing to NEEDS_REVIEW', {
+        context: 'PaymentsService',
+        bankTxnId,
+        error: err,
+      });
+
+      await this.txService.withTransaction(async (tx) => {
+        const branchByAccount = await this.repo.findBranchByBankAccountNo(tx, payload.accountNumber);
+        const fallbackBranchId = branchByAccount ? Number(branchByAccount.BranchId) : null;
+        await this.repo.updateBankTransactionStatus(tx, bankTxnId, {
+          matchStatus: 'NEEDS_REVIEW',
+          matchedBookingId: null,
+        });
+        pushNeedsReviewEvent(tx, 'UNKNOWN_CONTENT', fallbackBranchId, null);
+      });
+
+      return { duplicated: false, matched: false };
+    }
   }
 
   /**
@@ -660,24 +708,33 @@ export class PaymentsService {
     let count = 0;
     for (const row of expired) {
       const requestId = Number(row.RequestId);
-      const updated = await this.txService.withTransaction(async (tx) => {
-        const affected = await this.repo.markRequestExpiredById(tx, requestId);
-        if (!affected) {
-          return false;
-        }
-        tx.events.push({
-          rooms: [`booking:${row.BookingCode}`],
-          event: 'payment_request.expired',
-          payload: {
-            requestId,
-            bookingCode: row.BookingCode,
-          },
+      try {
+        const updated = await this.txService.withTransaction(async (tx) => {
+          const affected = await this.repo.markRequestExpiredById(tx, requestId);
+          if (!affected) {
+            return false;
+          }
+          tx.events.push({
+            rooms: [`booking:${row.BookingCode}`],
+            event: 'payment_request.expired',
+            payload: {
+              requestId,
+              bookingCode: row.BookingCode,
+            },
+          });
+          return true;
         });
-        return true;
-      });
 
-      if (updated) {
-        count += 1;
+        if (updated) {
+          count += 1;
+        }
+      } catch (err) {
+        this.logger?.error('expirePendingQrRequests item failed', {
+          context: 'PaymentsService',
+          requestId,
+          bookingCode: row.BookingCode,
+          error: err,
+        });
       }
     }
 

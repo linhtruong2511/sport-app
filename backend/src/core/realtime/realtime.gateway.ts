@@ -9,13 +9,19 @@ import {
 } from '@nestjs/websockets';
 import { ERROR_CATALOG } from '@sporthub/shared/errors';
 import type { Server, Socket } from 'socket.io';
+import { env, resolveCorsOrigin } from '../../config/env.js';
 import {
   type AuthenticatedUser,
   TOKEN_VERIFIER,
   type TokenVerifier,
 } from '../auth/auth.types.js';
 import { AppError } from '../errors.js';
+import { toSqlDate } from '../time.js';
 import { RealtimeService } from './realtime.service.js';
+import {
+  BOOKING_ACCESS_CHECKER,
+  type BookingAccessChecker,
+} from './realtime.types.js';
 
 interface SubscribePayload {
   channel?: string;
@@ -24,11 +30,29 @@ interface SubscribePayload {
   bookingCode?: string;
 }
 
-@WebSocketGateway({ namespace: '/', cors: { origin: true, credentials: true } })
+function isValidAvailabilityDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  try {
+    toSqlDate(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+@WebSocketGateway({
+  namespace: '/',
+  cors: { origin: resolveCorsOrigin(env.corsOrigin), credentials: true },
+})
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   constructor(
     private readonly realtimeService: RealtimeService,
     @Optional() @Inject(TOKEN_VERIFIER) private readonly tokenVerifier?: TokenVerifier,
+    @Optional()
+    @Inject(BOOKING_ACCESS_CHECKER)
+    private readonly bookingAccessChecker?: BookingAccessChecker,
   ) {}
 
   afterInit(server: Server): void {
@@ -75,10 +99,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
   }
 
   @SubscribeMessage('subscribe')
-  handleSubscribe(
+  async handleSubscribe(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: SubscribePayload,
-  ): void {
+  ): Promise<void> {
     if (!payload) {
       return;
     }
@@ -88,10 +112,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       typeof payload.branchId === 'number' &&
       Number.isInteger(payload.branchId) &&
       payload.branchId > 0 &&
-      typeof payload.date === 'string' &&
-      payload.date.length > 0
+      isValidAvailabilityDate(payload.date)
     ) {
-      void client.join(`availability:${payload.branchId}:${payload.date}`);
+      await client.join(`availability:${payload.branchId}:${payload.date}`);
       return;
     }
 
@@ -107,7 +130,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       payload.branchId > 0
     ) {
       if (user.role === 'OWNER' || (user.role === 'STAFF' && user.branchId === payload.branchId)) {
-        void client.join(`branch:${payload.branchId}`);
+        await client.join(`branch:${payload.branchId}`);
       }
       return;
     }
@@ -117,8 +140,27 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       typeof payload.bookingCode === 'string' &&
       payload.bookingCode.trim().length > 0
     ) {
-      // Fine-grained booking ownership / branch check will be added in M3
-      void client.join(`booking:${payload.bookingCode.trim()}`);
+      const bookingCode = payload.bookingCode.trim();
+      if (!this.bookingAccessChecker) {
+        client.emit('subscribe_error', {
+          channel: 'booking',
+          bookingCode,
+          code: 'FORBIDDEN',
+        });
+        return;
+      }
+
+      const allowed = await this.bookingAccessChecker.canAccessBooking(bookingCode, user);
+      if (!allowed) {
+        client.emit('subscribe_error', {
+          channel: 'booking',
+          bookingCode,
+          code: 'FORBIDDEN',
+        });
+        return;
+      }
+
+      await client.join(`booking:${bookingCode}`);
     }
   }
 

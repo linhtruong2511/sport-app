@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { BookingStatus } from '@sporthub/shared/enums';
 import { ERROR_CATALOG } from '@sporthub/shared/errors';
 import type {
@@ -12,9 +12,11 @@ import { CLOCK, type Clock } from '../core/clock.js';
 import { nextCode } from '../core/codes.js';
 import { DbTransactionService } from '../core/db/transaction.js';
 import { AppError } from '../core/errors.js';
+import { AppLogger } from '../core/logger.js';
 import { SettingsService } from '../core/settings.service.js';
 import {
   addMinutes,
+  buildBookingSlotStarts,
   diffSeconds,
   formatDateVn,
   formatTimeVn,
@@ -90,6 +92,7 @@ export class BookingsService {
     private readonly settingsService: SettingsService,
     private readonly txService: DbTransactionService,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Optional() private readonly logger?: AppLogger,
   ) {}
 
   // API-13, UC 004 / 007 / 008, SDD 3.5a-d
@@ -289,14 +292,7 @@ export class BookingsService {
         channel: 'ONLINE',
       });
 
-      const slotStarts: Date[] = [];
-      for (
-        let cur = startAt.getTime();
-        cur < endAt.getTime();
-        cur += court.gridBlockMinutes * 60_000
-      ) {
-        slotStarts.push(new Date(cur));
-      }
+      const slotStarts = buildBookingSlotStarts(startAt, endAt, court.gridBlockMinutes);
       // Enforces UX_BookingSlots_Court_Slot -> 409 SLOT_TAKEN
       await this.repo.insertBookingSlots(tx, bookingId, court.courtId, slotStarts);
 
@@ -635,8 +631,7 @@ export class BookingsService {
       });
 
       const bookingId = Number(row.BookingId);
-      await this.repo.updateBookingCanceled(tx, {
-        bookingId,
+      await this.bookingState.cancelBookingInTx(tx, row, {
         expectedVersion,
         cancelType: dto.cancelType,
         cancelReason: dto.reason,
@@ -644,28 +639,14 @@ export class BookingsService {
         canceledAt: now,
         refundRate: refundCalc.refundRate,
         refundAmount: refundCalc.refundAmount,
-      });
-
-      await this.repo.deactivateBookingSlots(tx, bookingId);
-      await this.paymentsService.cancelPendingRequestsInTx(tx, bookingId);
-
-      await this.repo.insertStatusHistory(tx, {
-        bookingId,
-        fromStatus: row.Status,
-        toStatus: 'CANCELED',
-        fromPaymentStatus: row.PaymentStatus,
-        toPaymentStatus: row.PaymentStatus,
-        changedBy: caller.userId,
-        changedAt: now,
-        note:
+        historyNote:
           dto.cancelType === 'NO_SHOW'
             ? `Hủy no-show: ${dto.reason}`
             : `Hủy đơn: ${dto.reason}`,
+        restorePromoIfUnpaid: row.Status === 'PENDING_PAYMENT',
       });
 
-      if (row.Status === 'PENDING_PAYMENT' && row.PromotionCode) {
-        await this.repo.decrementPromotionUsedCount(tx, row.PromotionCode, now);
-      }
+      await this.paymentsService.cancelPendingRequestsInTx(tx, bookingId);
 
       let refundSummary: BookingRefundSummaryDto | null = null;
       if ((refundCalc.refundAmount ?? 0) > 0 && refundCalc.refundRate !== null) {
@@ -768,83 +749,75 @@ export class BookingsService {
     let expiredCount = 0;
 
     for (const code of codes) {
-      const didExpire = await this.txService.withTransaction(async (tx) => {
-        const row = await this.repo.findByCodeForUpdate(tx, code);
-        if (!row || row.Status !== 'PENDING_PAYMENT' || row.HoldExpireAt === null) {
-          return false;
-        }
-        if (fromSqlDateTime(row.HoldExpireAt).getTime() >= now.getTime()) {
-          return false;
-        }
+      try {
+        const didExpire = await this.txService.withTransaction(async (tx) => {
+          const row = await this.repo.findByCodeForUpdate(tx, code);
+          if (!row || row.Status !== 'PENDING_PAYMENT' || row.HoldExpireAt === null) {
+            return false;
+          }
+          if (fromSqlDateTime(row.HoldExpireAt).getTime() >= now.getTime()) {
+            return false;
+          }
 
-        const bookingId = Number(row.BookingId);
-        const newRowVer = await this.repo.updateBookingExpired(tx, bookingId, now);
-        if (!newRowVer) {
-          return false;
-        }
+          const bookingId = Number(row.BookingId);
+          const newRowVer = await this.bookingState.expireBookingInTx(tx, row, now);
+          if (!newRowVer) {
+            return false;
+          }
 
-        await this.repo.deactivateBookingSlots(tx, bookingId);
-        await this.paymentsService.expirePendingRequestsInTx(tx, bookingId);
+          await this.paymentsService.expirePendingRequestsInTx(tx, bookingId);
 
-        if (row.PromotionCode) {
-          await this.repo.decrementPromotionUsedCount(tx, row.PromotionCode, now);
-        }
+          const startAt = fromSqlDateTime(row.StartAt);
+          const endAt = fromSqlDateTime(row.EndAt);
+          const date = formatDateVn(startAt);
+          const startTime = formatTimeVn(startAt);
+          const endTime = formatTimeVn(endAt);
+          const branchId = Number(row.BranchId);
 
-        await this.repo.insertStatusHistory(tx, {
-          bookingId,
-          fromStatus: 'PENDING_PAYMENT',
-          toStatus: 'EXPIRED',
-          fromPaymentStatus: row.PaymentStatus,
-          toPaymentStatus: row.PaymentStatus,
-          changedBy: null,
-          changedAt: now,
-          note: 'Job expireHolds – hết hạn giữ chỗ',
+          tx.events.push({
+            rooms: [`availability:${branchId}:${date}`, `branch:${branchId}`],
+            event: 'slot.updated',
+            payload: {
+              branchId,
+              courtId: Number(row.CourtId),
+              date,
+              startTime,
+              endTime,
+              state: 'FREE',
+            },
+          });
+
+          const bookingRooms = [`booking:${row.BookingCode}`, `branch:${branchId}`];
+          if (row.CustomerUserId !== null) {
+            bookingRooms.push(`user:${Number(row.CustomerUserId)}`);
+          }
+
+          tx.events.push({
+            rooms: bookingRooms,
+            event: 'booking.updated',
+            payload: {
+              bookingCode: row.BookingCode,
+              status: 'EXPIRED',
+              paymentStatus: row.PaymentStatus,
+              paidAmount: Number(row.PaidAmount),
+              remainingAmount: Number(row.RemainingAmount),
+              isOverdue: false,
+              version: encodeRowVer(newRowVer),
+            },
+          });
+
+          return true;
         });
 
-        const startAt = fromSqlDateTime(row.StartAt);
-        const endAt = fromSqlDateTime(row.EndAt);
-        const date = formatDateVn(startAt);
-        const startTime = formatTimeVn(startAt);
-        const endTime = formatTimeVn(endAt);
-        const branchId = Number(row.BranchId);
-
-        tx.events.push({
-          rooms: [`availability:${branchId}:${date}`, `branch:${branchId}`],
-          event: 'slot.updated',
-          payload: {
-            branchId,
-            courtId: Number(row.CourtId),
-            date,
-            startTime,
-            endTime,
-            state: 'FREE',
-          },
-        });
-
-        const bookingRooms = [`booking:${row.BookingCode}`, `branch:${branchId}`];
-        if (row.CustomerUserId !== null) {
-          bookingRooms.push(`user:${Number(row.CustomerUserId)}`);
+        if (didExpire) {
+          expiredCount += 1;
         }
-
-        tx.events.push({
-          rooms: bookingRooms,
-          event: 'booking.updated',
-          payload: {
-            bookingCode: row.BookingCode,
-            status: 'EXPIRED',
-            paymentStatus: row.PaymentStatus,
-            paidAmount: Number(row.PaidAmount),
-            remainingAmount: 0,
-            isOverdue: false,
-            version: encodeRowVer(newRowVer),
-          },
+      } catch (err) {
+        this.logger?.error('expireHolds item failed', {
+          context: 'BookingsService',
+          bookingCode: code,
+          error: err,
         });
-
-        return true;
-      });
-
-      if (didExpire) {
-        expiredCount += 1;
       }
     }
 

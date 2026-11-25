@@ -42,6 +42,7 @@ export interface RevenueReportSummaryDto extends ReportAggregateRowDto {
   completedRate: number;
   canceledRate: number;
   expiredRate: number;
+  bankTransferPct: number;
 }
 
 export interface RevenueReportDto {
@@ -361,6 +362,7 @@ export class ReportsService {
       completedRate: rateOf(baseSummary.completed, baseSummary.orders),
       canceledRate: rateOf(baseSummary.canceled, baseSummary.orders),
       expiredRate: rateOf(baseSummary.expired, baseSummary.orders),
+      bankTransferPct: rateOf(baseSummary.bankTransfer, baseSummary.grossCollected),
     };
 
     const byBranch = [...branchAggMap.values()].map(finalizeAggregate);

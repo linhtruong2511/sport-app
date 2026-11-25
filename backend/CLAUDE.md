@@ -4,33 +4,24 @@
 
 ## Cấu trúc
 
-Hiện có (NestJS 12, xem `backend/README.md`):
-
 ```
 src/
-  common/          all-exceptions.filter.ts
-  config/          env.ts, database.ts
+  config/          env.ts (validate production secrets), database.ts (mssql + optional msnodesqlv8)
+  core/            db, transaction (afterCommit + socket flush), errors, http (envelope, rate-limit, security-headers, traceId),
+                   auth (guards, branchScope), idempotency (IN_PROGRESS lock), settings, clock, time, money, codes, realtime, logger
   database/        database.module.ts, database.service.ts
   health/          health.controller.ts, health.module.ts
-  scripts/         testDb.ts
-  app.module.ts, main.ts
-```
-
-Cấu trúc đích khi triển khai các module nghiệp vụ:
-
-```
-src/
-  core/            db, transaction, errors, http envelope, auth, branchScope, idempotency,
-                   settings, clock, time, money, codes, realtime, logger
-  <module>/        (hoặc modules/<module>/)
+  scripts/         testDb.ts, dbReset.ts, dbMigrate.ts
+  <module>/        auth, catalog, availability, pricing, bookings, payments, pos, promotions,
+                   notifications, dashboard, reports, admin/*, affected-bookings, reconciliation
     <module>.module.ts       module NestJS
     <module>.controller.ts   route + guard + pipe zod → service → envelope
-    <module>.service.ts      nghiệp vụ, transaction, sự kiện
-    <module>.repository.ts   SQL
+    <module>.service.ts      nghiệp vụ, transaction, sự kiện (không viết SQL trực tiếp)
+    <module>.repository.ts   SQL tham số hóa
     <module>.mapper.ts       hàng CSDL → DTO (camelCase, ISO +07:00)
     <module>.schemas.ts      zod (import validator chung từ @sporthub/shared)
-    __tests__/
-  jobs/            đăng ký cron, gọi service
+    __tests__/               unit (*.test.ts) & integration (*.int.test.ts)
+  jobs/            đăng ký cron (node-cron + JobLockService sp_getapplock), gọi service
   integrations/    sepay (BankGateway), notifier (OutboundNotifier stub)
 ```
 
@@ -86,9 +77,11 @@ Tạo module mới bằng `/new-module <tên>`.
 
 ```bash
 npm run db:test      # kiểm tra kết nối SQL Server theo backend/.env
-npm run dev          # nest start --watch (cổng mặc định 3000 theo .env.example)
+npm run db:reset     # reset DB test/dev (từ chối production / DB ngoài whitelist nếu thiếu --force-i-know)
+npm run db:migrate   # chạy các migration chưa áp dụng
+npm run dev          # nest start --watch (cổng mặc định 3000)
 npm run build        # nest build
 npm start            # node dist/main.js
+npm test             # unit test (Vitest)
+npm run test:int     # integration test trên SQL Server SportHub_Test
 ```
-
-*(Script `npm test` và `npm run test:int` cho unit/integration test sẽ bổ sung vào `backend/package.json` ở M0.)*

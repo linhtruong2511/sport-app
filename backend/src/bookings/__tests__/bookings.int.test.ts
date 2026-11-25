@@ -3,7 +3,8 @@ import { Global, type INestApplication, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BookingStateService } from '../booking-state.service.js';
 import { closePool, sql } from '../../config/database.js';
 import {
   type AuthenticatedUser,
@@ -950,5 +951,63 @@ describe('bookings integration (API-13, 14, 18, 19, 20 + expireHolds)', () => {
       });
     expect(rebookRes.status).toBe(201);
     createdBookingCodes.push(rebookRes.body.data.booking.bookingCode);
+  });
+
+  it('expireHolds (M-2): isolates per-booking failures so one failing booking does not block subsequent holds in the batch', async () => {
+    const playDate = formatDateVn(addDays(fakeClock.now(), 9));
+    const r1 = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer token-an')
+      .set('Idempotency-Key', uuid())
+      .send({
+        courtId: ids.pb01,
+        date: playDate,
+        startTime: '14:00',
+        endTime: '15:00',
+        paymentOption: 'FULL',
+      });
+    const r2 = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer token-binh')
+      .set('Idempotency-Key', uuid())
+      .send({
+        courtId: ids.pb03,
+        date: playDate,
+        startTime: '14:00',
+        endTime: '15:00',
+        paymentOption: 'FULL',
+      });
+
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
+    const code1 = r1.body.data.booking.bookingCode as string;
+    const code2 = r2.body.data.booking.bookingCode as string;
+    createdBookingCodes.push(code1, code2);
+
+    fakeClock.advanceMinutes(11);
+
+    const bookingState = app.get(BookingStateService);
+    const spy = vi
+      .spyOn(bookingState, 'expireBookingInTx')
+      .mockRejectedValueOnce(new Error('Simulated expire failure on first item'));
+
+    let expiredCount = 0;
+    try {
+      expiredCount = await bookingsService.expireHolds(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(expiredCount).toBeGreaterThanOrEqual(1);
+
+    const detail2 = await request(app.getHttpServer())
+      .get(`/api/v1/bookings/${code2}`)
+      .set('Authorization', 'Bearer token-binh');
+    expect(detail2.status).toBe(200);
+    expect(detail2.body.data.status).toBe('EXPIRED');
+
+    // Clean up remaining pending hold (code1) cleanly on next expireHolds pass
+    const secondPass = await bookingsService.expireHolds(200);
+    expect(secondPass).toBeGreaterThanOrEqual(1);
   });
 });

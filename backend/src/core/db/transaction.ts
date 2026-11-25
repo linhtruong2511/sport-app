@@ -15,6 +15,7 @@ export interface DbExecutor {
 export interface TxContext {
   request(): sqlTypes.Request;
   events: DomainEvent[];
+  afterCommit?: Array<() => void | Promise<void>>;
   isTransaction: true;
 }
 
@@ -44,9 +45,11 @@ export class DbTransactionService {
       await transaction.begin(sql.ISOLATION_LEVEL.READ_COMMITTED);
 
       const events: DomainEvent[] = [];
+      const afterCommit: Array<() => void | Promise<void>> = [];
       const tx: TxContext = {
         request: () => transaction.request(),
         events,
+        afterCommit,
         isTransaction: true,
       };
 
@@ -54,6 +57,13 @@ export class DbTransactionService {
         const result = await fn(tx);
         await transaction.commit();
         this.realtimeService.flush(tx.events);
+        for (const hook of afterCommit) {
+          try {
+            await hook();
+          } catch {
+            // Post-commit hooks (e.g. cache invalidation) must not fail an already committed tx.
+          }
+        }
         return result;
       } catch (err) {
         await transaction.rollback().catch(() => undefined);

@@ -205,3 +205,22 @@ export function addDays(date: Date, d: number): Date {
 export function diffSeconds(later: Date, earlier: Date): number {
   return (later.getTime() - earlier.getTime()) / 1_000;
 }
+
+/**
+ * R-05: Splits [startAt, endAt) into slot start timestamps aligned to Sports.GridBlockMinutes.
+ */
+export function buildBookingSlotStarts(
+  startAt: Date,
+  endAt: Date,
+  gridBlockMinutes: number,
+): Date[] {
+  if (!Number.isInteger(gridBlockMinutes) || gridBlockMinutes <= 0) {
+    throw new Error(`Invalid gridBlockMinutes: ${gridBlockMinutes}`);
+  }
+  const slotStarts: Date[] = [];
+  const stepMs = gridBlockMinutes * 60_000;
+  for (let cur = startAt.getTime(); cur < endAt.getTime(); cur += stepMs) {
+    slotStarts.push(new Date(cur));
+  }
+  return slotStarts;
+}

@@ -1,6 +1,7 @@
 import { Controller, Get, Inject, Query, UseGuards } from '@nestjs/common';
 import {
   type AuthenticatedUser,
+  BranchScopeGuard,
   CurrentUser,
   JwtAuthGuard,
   Roles,
@@ -18,7 +19,7 @@ import {
 import { DashboardService } from './dashboard.service.js';
 
 @Controller('dashboard')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, BranchScopeGuard)
 @Roles('STAFF', 'OWNER')
 export class DashboardController {
   constructor(

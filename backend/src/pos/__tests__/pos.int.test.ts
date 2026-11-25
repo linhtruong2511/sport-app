@@ -19,6 +19,7 @@ import { AppError, AppExceptionsFilter } from '../../core/errors.js';
 import { traceIdMiddleware } from '../../core/http/trace-id.middleware.js';
 import { AppLogger } from '../../core/logger.js';
 import { RealtimeService } from '../../core/realtime/realtime.service.js';
+import { SettingsService } from '../../core/settings.service.js';
 import { addDays, addMinutes, formatDateVn, parseVnDateTime } from '../../core/time.js';
 import { DatabaseModule } from '../../database/database.module.js';
 import { PaymentsModule } from '../../payments/payments.module.js';
@@ -373,6 +374,8 @@ describe('pos integration (API-25..35)', () => {
     expect(mismatchRes.body.error.code).toBe('AMOUNT_MISMATCH');
 
     // 4. Create GUEST FULL + CASH booking with Idempotency-Key
+    // Advance clock past seeded B3 payment timestamp (@Now - 29m) so API-31 latest receipt selects this new payment
+    fakeClock.set(addMinutes(new Date(), 1));
     const idemKey = uuid();
     const createPayload = {
       branchId: ids.cs01,
@@ -920,5 +923,50 @@ describe('pos integration (API-25..35)', () => {
       });
     expect(settleAgain.status).toBe(409);
     expect(settleAgain.body.error.code).toBe('BOOKING_STATE_CHANGED');
+  });
+
+  it('M-4: reads CHECKIN_EARLY_MINUTES from SystemSettings instead of hardcoding 15m', async () => {
+    const settingsService = app.get(SettingsService);
+    fakeClock.set(parseVnDateTime(baseToday, '08:00'));
+
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/pos/bookings')
+      .set('Authorization', 'Bearer token-staff-cs01')
+      .set('Idempotency-Key', uuid())
+      .send({
+        branchId: ids.cs01,
+        courtId: ids.cl02,
+        date: baseToday,
+        startTime: '14:00',
+        endTime: '15:00',
+        customer: { type: 'GUEST', phone: '0908111222', fullName: 'Khách Early Checkin' },
+        paymentOption: 'FULL',
+        payment: { method: 'CASH', amount: 80_000 },
+      });
+    expect(res.status).toBe(201);
+    const created = res.body.data.booking;
+    createdBookingCodes.push(created.bookingCode);
+
+    // At 13:35 (25 minutes early): default 15m rejects with 422 CHECK_IN_TOO_EARLY
+    fakeClock.set(parseVnDateTime(baseToday, '13:35'));
+    const tooEarlyRes = await request(app.getHttpServer())
+      .post(`/api/v1/pos/bookings/${created.bookingCode}/check-in`)
+      .set('Authorization', 'Bearer token-staff-cs01')
+      .send({ version: created.version });
+    expect(tooEarlyRes.status).toBe(422);
+    expect(tooEarlyRes.body.error.code).toBe('CHECK_IN_TOO_EARLY');
+
+    // Override CHECKIN_EARLY_MINUTES = 30 -> check-in 25 minutes early succeeds
+    settingsService.setOverrides({ CHECKIN_EARLY_MINUTES: 30 });
+    try {
+      const allowedRes = await request(app.getHttpServer())
+        .post(`/api/v1/pos/bookings/${created.bookingCode}/check-in`)
+        .set('Authorization', 'Bearer token-staff-cs01')
+        .send({ version: created.version });
+      expect(allowedRes.status).toBe(200);
+      expect(allowedRes.body.data.booking.status).toBe('IN_USE');
+    } finally {
+      settingsService.setOverrides(null);
+    }
   });
 });

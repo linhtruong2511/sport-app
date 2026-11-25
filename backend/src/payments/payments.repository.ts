@@ -323,6 +323,37 @@ export class PaymentsRepository {
     }
   }
 
+  async findBankTransactionByProviderTxn(
+    exec: DbExecutor,
+    provider: string,
+    providerTxnId: string,
+  ): Promise<{ bankTxnId: number; matchStatus: BankMatchStatus } | null> {
+    const res = await exec
+      .request()
+      .input('provider', sql.VarChar(30), provider)
+      .input('providerTxnId', sql.VarChar(100), providerTxnId)
+      .query<{ BankTxnId: number | string; MatchStatus: BankMatchStatus }>(`
+        SELECT BankTxnId, MatchStatus
+        FROM dbo.BankTransactions
+        WHERE Provider = @provider AND ProviderTxnId = @providerTxnId
+      `);
+    const row = res.recordset[0];
+    return row ? { bankTxnId: Number(row.BankTxnId), matchStatus: row.MatchStatus } : null;
+  }
+
+  /** Locks the row and reports whether it is still PENDING (i.e. this caller may process it). */
+  async lockPendingBankTransaction(tx: TxContext, bankTxnId: number): Promise<boolean> {
+    const res = await tx
+      .request()
+      .input('bankTxnId', sql.BigInt, bankTxnId)
+      .query<{ MatchStatus: BankMatchStatus }>(`
+        SELECT MatchStatus
+        FROM dbo.BankTransactions WITH (UPDLOCK, ROWLOCK)
+        WHERE BankTxnId = @bankTxnId
+      `);
+    return res.recordset[0]?.MatchStatus === 'PENDING';
+  }
+
   async updateBankTransactionStatus(
     tx: TxContext,
     bankTxnId: number,

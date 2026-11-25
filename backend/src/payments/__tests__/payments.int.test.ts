@@ -3,9 +3,11 @@ import { Global, type INestApplication, Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import type { BookingChannel, BookingStatus, PaymentOption, PaymentStatus } from '@sporthub/shared/enums';
+import express from 'express';
 import type { Server } from 'socket.io';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { BookingStateService } from '../../bookings/booking-state.service.js';
 import { closePool, sql } from '../../config/database.js';
 import { env } from '../../config/env.js';
 import {
@@ -174,8 +176,20 @@ describe('payments & webhook integration', () => {
   }
 
   beforeAll(async () => {
-    app = await NestFactory.create(PaymentsTestAppModule, new ExpressAdapter(), { logger: false });
+    const expressApp = express();
+    app = await NestFactory.create(PaymentsTestAppModule, new ExpressAdapter(expressApp), {
+      logger: false,
+      bodyParser: false,
+    });
     app.setGlobalPrefix('api/v1');
+    app.use(
+      express.json({
+        limit: '1mb',
+        verify: (req, _res, buf) => {
+          (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+        },
+      }),
+    );
     app.use(traceIdMiddleware);
     app.useGlobalFilters(new AppExceptionsFilter(app.get(AppLogger)));
     await app.init();
@@ -901,5 +915,140 @@ describe('payments & webhook integration', () => {
           (e.payload as { requestId: number }).requestId === reqId,
       ),
     ).toBe(true);
+  });
+
+  it('Webhook durability (C-4, L-6): checks auth before validation, preserves verbatim RawPayload & decimal/no-date payloads, and falls back to NEEDS_REVIEW on matching error', async () => {
+    // 1. L-6 / C-4: Invalid body + missing/wrong API key -> 401 (not 400)
+    const unauthInvalidBody = await request(app.getHttpServer())
+      .post('/api/v1/webhooks/bank/sepay')
+      .set('Authorization', 'Apikey wrong-key')
+      .send({ invalidField: true });
+    expect(unauthInvalidBody.status).toBe(401);
+
+    // 2. C-4: Missing transactionDate + decimal transferAmount + extra fields + custom JSON formatting -> 200 NEEDS_REVIEW with verbatim RawPayload
+    const decTxnId = 'SP_DEC_RAW_911';
+    createdProviderTxnIds.push(decTxnId);
+    const rawJsonStr = `{  "id": "${decTxnId}", "accountNumber": "${cs01BankAcc}", "transferType": "in", "transferAmount": 250000.5, "content": "UNKNOWN", "extraTag": "keep-me" }`;
+    const decRes = await request(app.getHttpServer())
+      .post('/api/v1/webhooks/bank/sepay')
+      .set('Authorization', `Apikey ${env.sepayWebhookApiKey}`)
+      .set('Content-Type', 'application/json')
+      .send(rawJsonStr);
+    expect(decRes.status).toBe(200);
+    expect(decRes.body).toEqual({ success: true });
+
+    const exec = await txService.executor();
+    const decDbRes = await exec
+      .request()
+      .input('tid', sql.VarChar(100), decTxnId)
+      .query<{ MatchStatus: string; RawPayload: string; Amount: number }>(
+        "SELECT MatchStatus, RawPayload, Amount FROM dbo.BankTransactions WHERE Provider = 'SEPAY' AND ProviderTxnId = @tid",
+      );
+    expect(decDbRes.recordset[0].MatchStatus).toBe('NEEDS_REVIEW');
+    expect(decDbRes.recordset[0].RawPayload).toBe(rawJsonStr);
+    expect(Number(decDbRes.recordset[0].Amount)).toBe(250_001);
+
+    // 3. C-4: Matching step throws unexpected error -> BankTransactions is STILL committed as NEEDS_REVIEW (never lost)
+    const codeErr = 'BK20261112912';
+    await seedBooking({ code: codeErr, paymentOption: 'FULL', totalAmount: 250_000 });
+    const bookingState = app.get(BookingStateService);
+    const spy = vi
+      .spyOn(bookingState, 'applyPaymentInTx')
+      .mockRejectedValueOnce(new Error('Simulated matching failure'));
+
+    emittedEvents = [];
+    const errTxnId = 'SP_ERR_FALLBACK_912';
+    createdProviderTxnIds.push(errTxnId);
+    try {
+      const errRes = await request(app.getHttpServer())
+        .post('/api/v1/webhooks/bank/sepay')
+        .set('Authorization', `Apikey ${env.sepayWebhookApiKey}`)
+        .send({
+          id: errTxnId,
+          transactionDate: '2026-11-12 17:00:00',
+          accountNumber: cs01BankAcc,
+          content: `THANHTOAN ${codeErr}`,
+          transferType: 'in',
+          transferAmount: 250_000,
+        });
+      expect(errRes.status).toBe(200);
+      expect(errRes.body).toEqual({ success: true });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const errDbRes = await exec
+      .request()
+      .input('tid', sql.VarChar(100), errTxnId)
+      .query<{ MatchStatus: string }>(
+        "SELECT MatchStatus FROM dbo.BankTransactions WHERE Provider = 'SEPAY' AND ProviderTxnId = @tid",
+      );
+    expect(errDbRes.recordset[0].MatchStatus).toBe('NEEDS_REVIEW');
+    expect(
+      emittedEvents.some((e) => e.event === 'reconciliation.created'),
+    ).toBe(true);
+  });
+
+  it('Webhook redelivery (C-4): transient DB error keeps txn PENDING + 5xx; redelivery resumes matching; a handled txn stays idempotent', async () => {
+    const code = 'BK20261112913';
+    await seedBooking({ code, paymentOption: 'FULL', totalAmount: 250_000 });
+    const txnId = 'SP_TRANSIENT_913';
+    createdProviderTxnIds.push(txnId);
+    const body = {
+      id: txnId,
+      transactionDate: '2026-11-12 17:00:00',
+      accountNumber: cs01BankAcc,
+      content: `THANHTOAN ${code}`,
+      transferType: 'in',
+      transferAmount: 250_000,
+    };
+    const exec = await txService.executor();
+    const readStatus = async () =>
+      (
+        await exec
+          .request()
+          .input('tid', sql.VarChar(100), txnId)
+          .query<{ MatchStatus: string }>(
+            "SELECT MatchStatus FROM dbo.BankTransactions WHERE Provider = 'SEPAY' AND ProviderTxnId = @tid",
+          )
+      ).recordset[0]?.MatchStatus;
+
+    // 1. Matching hits a transient error (timeout) -> 5xx, txn stored and still PENDING (not NEEDS_REVIEW)
+    const bookingState = app.get(BookingStateService);
+    const spy = vi
+      .spyOn(bookingState, 'applyPaymentInTx')
+      .mockRejectedValueOnce(Object.assign(new Error('Simulated timeout'), { code: 'ETIMEOUT' }));
+    try {
+      const first = await request(app.getHttpServer())
+        .post('/api/v1/webhooks/bank/sepay')
+        .set('Authorization', `Apikey ${env.sepayWebhookApiKey}`)
+        .send(body);
+      expect(first.status).toBeGreaterThanOrEqual(500);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await readStatus()).toBe('PENDING');
+
+    // 2. SePay redelivers the same txn -> matching resumes and succeeds
+    const second = await request(app.getHttpServer())
+      .post('/api/v1/webhooks/bank/sepay')
+      .set('Authorization', `Apikey ${env.sepayWebhookApiKey}`)
+      .send(body);
+    expect(second.status).toBe(200);
+    expect(await readStatus()).toBe('MATCHED');
+
+    // 3. A further redelivery of an already handled txn is a no-op (no double payment)
+    const third = await request(app.getHttpServer())
+      .post('/api/v1/webhooks/bank/sepay')
+      .set('Authorization', `Apikey ${env.sepayWebhookApiKey}`)
+      .send(body);
+    expect(third.status).toBe(200);
+    const payCount = await exec
+      .request()
+      .input('code', sql.VarChar(20), code)
+      .query<{ Cnt: number }>(
+        `SELECT COUNT(*) AS Cnt FROM dbo.Payments p JOIN dbo.Bookings b ON b.BookingId = p.BookingId WHERE b.BookingCode = @code`,
+      );
+    expect(payCount.recordset[0].Cnt).toBe(1);
   });
 });

@@ -370,4 +370,55 @@ describe('M9 concurrency & optimistic locking integration tests', () => {
       }
     }
   });
+
+  it('Test 4 — Parallel Idempotency-Key & Method+Path Hashing (M-1): 2 concurrent identical requests -> both return same 201 bookingCode, 1 DB row; same key on different endpoint -> 409 IDEMPOTENCY_CONFLICT', async () => {
+    const playDate = formatDateVn(addDays(fakeClock.now(), 18));
+    const sharedKey = uuid();
+    const payload = {
+      courtId: ids.pb01,
+      date: playDate,
+      startTime: '14:00',
+      endTime: '15:00',
+      paymentOption: 'FULL',
+    };
+
+    const [res1, res2] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer token-an')
+        .set('Idempotency-Key', sharedKey)
+        .send(payload),
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer token-an')
+        .set('Idempotency-Key', sharedKey)
+        .send(payload),
+    ]);
+
+    expect(res1.status).toBe(201);
+    expect(res2.status).toBe(201);
+    const bookingCode = res1.body.data.booking.bookingCode as string;
+    createdBookingCodes.push(bookingCode);
+    expect(res2.body.data.booking.bookingCode).toBe(bookingCode);
+
+    const exec = await txService.executor();
+    const slotStart = parseVnDateTime(playDate, '14:00');
+    const slotCount = await exec
+      .request()
+      .input('courtId', sql.Int, ids.pb01)
+      .input('slotStart', sql.DateTime2(0), toSqlDateTime(slotStart))
+      .query<{ Cnt: number }>(
+        'SELECT COUNT(*) AS Cnt FROM dbo.BookingSlots WHERE CourtId = @courtId AND SlotStart = @slotStart AND IsActive = 1',
+      );
+    expect(Number(slotCount.recordset[0].Cnt)).toBe(1);
+
+    // Same key reused on a different endpoint (even with matching body) -> 409 IDEMPOTENCY_CONFLICT
+    const crossEndpointRes = await request(app.getHttpServer())
+      .post(`/api/v1/bookings/${bookingCode}/payment-requests`)
+      .set('Authorization', 'Bearer token-an')
+      .set('Idempotency-Key', sharedKey)
+      .send(payload);
+    expect(crossEndpointRes.status).toBe(409);
+    expect(crossEndpointRes.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+  });
 });

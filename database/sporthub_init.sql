@@ -63,6 +63,19 @@ GO
 /* =============================================================================
    PHẦN 1. XÓA ĐỐI TƯỢNG CŨ (thứ tự con → cha)
    ============================================================================= */
+-- Chốt chặn chống xóa nhầm dữ liệu thật (C-3):
+-- Mặc định @AllowReset = 0 sẽ từ chối chạy nếu bảng Users đã có dữ liệu.
+-- Đặt @AllowReset = 1 hoặc dùng script db:reset ở môi trường test/dev để cho phép xóa lại từ đầu.
+DECLARE @AllowReset BIT = 0;
+IF @AllowReset = 0
+   AND OBJECT_ID(N'dbo.Users', N'U') IS NOT NULL
+   AND EXISTS (SELECT 1 FROM dbo.Users)
+BEGIN
+    RAISERROR(N'CẢNH BÁO: Database đã có dữ liệu Users. Đặt @AllowReset = 1 nếu chắc chắn muốn xóa toàn bộ dữ liệu.', 16, 1);
+    SET NOEXEC ON;
+END;
+GO
+
 DROP PROCEDURE IF EXISTS dbo.usp_NextCode;
 DROP TABLE IF EXISTS dbo.Payments;
 DROP TABLE IF EXISTS dbo.Refunds;
@@ -834,7 +847,8 @@ INSERT INTO dbo.SystemSettings (SettingKey, SettingValue, Description) VALUES
  ('REFUND_HALF_RATE',        N'50', N'Tỷ lệ hoàn (%) cho mốc hủy giữa – FR 12'),
  ('LOGIN_MAX_FAILED',        N'5',  N'Số lần sai mật khẩu liên tiếp trước khi khóa tạm – UC 001 luồng 2b'),
  ('LOGIN_LOCK_MINUTES',      N'5',  N'Thời gian khóa tạm tài khoản (phút) – UC 001 luồng 2b'),
- ('QR_EXPIRE_MINUTES',       N'10', N'Hiệu lực mã QR tạo tại quầy (phút), không vượt hạn giữ chỗ của đơn – UC 012');
+ ('QR_EXPIRE_MINUTES',       N'10', N'Hiệu lực mã QR tạo tại quầy (phút), không vượt hạn giữ chỗ của đơn – UC 012'),
+ ('CHECKIN_EARLY_MINUTES',   N'15', N'Cho phép nhận sân sớm nhất trước giờ chơi (phút) – Q-15 / R-12');
 
 /* 5.2 Sports – 5 bộ môn theo SRS. GridBlockMinutes ∈ {15, 30, 60} theo CHECK của SDD */
 INSERT INTO dbo.Sports (Code, Name, Icon, GridBlockMinutes, SortOrder) VALUES
@@ -1309,4 +1323,7 @@ ORDER BY t.name;
 
 SELECT BookingCode, Status, PaymentStatus, TotalAmount, PaidAmount, RemainingAmount, StartAt, EndAt
 FROM dbo.Bookings ORDER BY BookingId;
+GO
+
+SET NOEXEC OFF;
 GO

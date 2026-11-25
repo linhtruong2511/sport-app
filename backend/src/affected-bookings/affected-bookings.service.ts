@@ -461,28 +461,18 @@ export class AffectedBookingsService {
       }
 
       const bookingId = Number(row.BookingId);
-      await this.bookingsRepo.deactivateBookingSlots(tx, bookingId);
-
-      const newSlotStarts: Date[] = [];
-      for (
-        let cur = newStartAt.getTime();
-        cur < newEndAt.getTime();
-        cur += newCourt.gridBlockMinutes * 60_000
-      ) {
-        newSlotStarts.push(new Date(cur));
-      }
-      await this.bookingsRepo.insertBookingSlots(tx, bookingId, dto.newCourtId, newSlotStarts);
-
-      await this.repo.updateBookingScheduleForTransfer(tx, {
-        bookingId,
+      const note = dto.note?.trim() || null;
+      await this.bookingState.reassignScheduleInTx(tx, row, {
         expectedVersion,
         newCourtId: dto.newCourtId,
         newStartAt,
         newEndAt,
+        gridBlockMinutes: newCourt.gridBlockMinutes,
+        changedBy: caller.userId,
+        historyNote: `Chuyển từ ${row.CourtName} sang ${newCourt.name}${note ? `: ${note}` : ''}`,
         now,
       });
 
-      const note = dto.note?.trim() || null;
       const transferId = await this.repo.insertBookingTransfer(tx, {
         bookingId,
         oldCourtId: Number(row.CourtId),
@@ -494,17 +484,6 @@ export class AffectedBookingsService {
         performedBy: caller.userId,
         note,
         now,
-      });
-
-      await this.bookingsRepo.insertStatusHistory(tx, {
-        bookingId,
-        fromStatus: row.Status,
-        toStatus: row.Status,
-        fromPaymentStatus: row.PaymentStatus,
-        toPaymentStatus: row.PaymentStatus,
-        changedBy: caller.userId,
-        changedAt: now,
-        note: `Chuyển từ ${row.CourtName} sang ${newCourt.name}${note ? `: ${note}` : ''}`,
       });
 
       if (row.CustomerUserId !== null) {
@@ -625,8 +604,7 @@ export class AffectedBookingsService {
       const noteSuffix = dto.note?.trim();
       const cancelReason = noteSuffix ? `Đóng đơn do cơ sở: ${noteSuffix}` : 'Đóng đơn do cơ sở';
 
-      const newRowVer = await this.bookingsRepo.updateBookingCanceled(tx, {
-        bookingId,
+      const newRowVer = await this.bookingState.cancelBookingInTx(tx, row, {
         expectedVersion,
         cancelType: 'BY_FACILITY',
         cancelReason,
@@ -634,26 +612,12 @@ export class AffectedBookingsService {
         canceledAt: now,
         refundRate: 100,
         refundAmount: paidAmount,
+        historyNote: cancelReason,
+        // business-rules.md section 5: BY_FACILITY with no money paid yet -> UsedCount - 1
+        restorePromoIfUnpaid: paidAmount === 0,
       });
 
-      await this.bookingsRepo.deactivateBookingSlots(tx, bookingId);
       await this.paymentsService.cancelPendingRequestsInTx(tx, bookingId);
-
-      // business-rules.md section 5: BY_FACILITY with no money paid yet -> UsedCount - 1
-      if (paidAmount === 0 && row.PromotionCode) {
-        await this.bookingsRepo.decrementPromotionUsedCount(tx, row.PromotionCode, now);
-      }
-
-      await this.bookingsRepo.insertStatusHistory(tx, {
-        bookingId,
-        fromStatus: row.Status,
-        toStatus: 'CANCELED',
-        fromPaymentStatus: row.PaymentStatus,
-        toPaymentStatus: row.PaymentStatus,
-        changedBy: caller.userId,
-        changedAt: now,
-        note: cancelReason,
-      });
 
       let refund: BookingRefundSummaryDto | null = null;
       if (paidAmount > 0) {
@@ -709,7 +673,7 @@ export class AffectedBookingsService {
           status: 'CANCELED',
           paymentStatus: row.PaymentStatus,
           paidAmount,
-          remainingAmount: 0,
+          remainingAmount: Number(row.RemainingAmount),
           isOverdue: false,
           version: encodeRowVer(newRowVer),
         },

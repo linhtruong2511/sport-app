@@ -14,8 +14,7 @@ import type {
 import type { ReceiptDto } from '@sporthub/shared/types';
 import type { BookingRow } from '../bookings/bookings.mapper.js';
 import { sql } from '../config/database.js';
-import type { DbExecutor, TxContext } from '../core/db/transaction.js';
-import { AppError } from '../core/errors.js';
+import type { DbExecutor } from '../core/db/transaction.js';
 import {
   addDays,
   fromSqlDate,
@@ -364,77 +363,6 @@ export class PosRepository {
       `);
 
     return res.recordset[0]?.BookingCode ?? null;
-  }
-
-  async updateBookingCheckedIn(
-    tx: TxContext,
-    input: { bookingId: number; expectedVersion: Buffer; now: Date },
-  ): Promise<Buffer> {
-    const res = await tx
-      .request()
-      .input('bookingId', sql.BigInt, input.bookingId)
-      .input('ver', sql.VarBinary(8), input.expectedVersion)
-      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
-      .query<{ RowVer: Buffer }>(`
-        UPDATE dbo.Bookings
-        SET Status = 'IN_USE',
-            CheckedInAt = @now,
-            UpdatedAt = @now
-        OUTPUT inserted.RowVer
-        WHERE BookingId = @bookingId
-          AND RowVer = @ver
-          AND Status = 'CONFIRMED'
-      `);
-
-    if (!res.recordset[0]) {
-      throw new AppError('BOOKING_STATE_CHANGED');
-    }
-
-    return res.recordset[0].RowVer;
-  }
-
-  async updateBookingCompleted(
-    tx: TxContext,
-    input: { bookingId: number; expectedVersion: Buffer; now: Date },
-  ): Promise<Buffer> {
-    const res = await tx
-      .request()
-      .input('bookingId', sql.BigInt, input.bookingId)
-      .input('ver', sql.VarBinary(8), input.expectedVersion)
-      .input('now', sql.DateTime2(0), toSqlDateTime(input.now))
-      .query<{ RowVer: Buffer }>(`
-        UPDATE dbo.Bookings
-        SET Status = 'COMPLETED',
-            CheckedOutAt = @now,
-            UpdatedAt = @now
-        OUTPUT inserted.RowVer
-        WHERE BookingId = @bookingId
-          AND RowVer = @ver
-          AND Status = 'IN_USE'
-      `);
-
-    if (!res.recordset[0]) {
-      throw new AppError('BOOKING_STATE_CHANGED');
-    }
-
-    return res.recordset[0].RowVer;
-  }
-
-  async deactivateFutureSlots(tx: TxContext, bookingId: number, now: Date): Promise<Date[]> {
-    const res = await tx
-      .request()
-      .input('bookingId', sql.BigInt, bookingId)
-      .input('now', sql.DateTime2(0), toSqlDateTime(now))
-      .query<{ SlotStart: Date | string }>(`
-        UPDATE dbo.BookingSlots
-        SET IsActive = 0
-        OUTPUT deleted.SlotStart
-        WHERE BookingId = @bookingId
-          AND IsActive = 1
-          AND SlotStart >= @now
-      `);
-
-    return res.recordset.map((r) => fromSqlDateTime(r.SlotStart));
   }
 
   async listBranchBookingsByDate(

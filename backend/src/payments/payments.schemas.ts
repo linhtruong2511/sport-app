@@ -20,20 +20,22 @@ export const createPaymentRequestSchema = z.preprocess(
   }),
 );
 
-export const sepayWebhookSchema = z.object({
-  id: z.union([z.number(), z.string()]),
-  gateway: z.string().nullable().optional(),
-  transactionDate: z.string(),
-  accountNumber: z.string().trim().min(1),
-  code: z.string().nullable().optional(),
-  content: z.string().nullable().optional(),
-  transferType: z.string(),
-  transferAmount: z.coerce.number().int().nonnegative(),
-  accumulated: z.coerce.number().nullable().optional(),
-  subAccount: z.string().nullable().optional(),
-  referenceCode: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-});
+export const sepayWebhookSchema = z
+  .object({
+    id: z.union([z.number(), z.string().trim().min(1)]),
+    gateway: z.string().nullable().optional(),
+    transactionDate: z.string().nullable().optional(),
+    accountNumber: z.string().trim().min(1),
+    code: z.string().nullable().optional(),
+    content: z.string().nullable().optional(),
+    transferType: z.string().trim().min(1),
+    transferAmount: z.coerce.number().finite().nonnegative(),
+    accumulated: z.coerce.number().nullable().optional(),
+    subAccount: z.string().nullable().optional(),
+    referenceCode: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export type BookingCodeParamDto = z.infer<typeof bookingCodeParamSchema>;
 export type RequestIdParamDto = z.infer<typeof requestIdParamSchema>;

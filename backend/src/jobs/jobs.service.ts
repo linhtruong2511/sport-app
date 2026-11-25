@@ -1,13 +1,10 @@
-import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Injectable, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import cron, { type ScheduledTask } from 'node-cron';
 import { AdminPromotionsService } from '../admin/promotions/admin-promotions.service.js';
 import { BookingsService } from '../bookings/bookings.service.js';
-import { sql } from '../config/database.js';
 import { env } from '../config/env.js';
-import { CLOCK, type Clock } from '../core/clock.js';
-import { DbTransactionService } from '../core/db/transaction.js';
+import { IdempotencyInterceptor } from '../core/idempotency/idempotency.interceptor.js';
 import { AppLogger } from '../core/logger.js';
-import { toSqlDateTime } from '../core/time.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { JobLockService } from './job-lock.service.js';
 import { LifecycleJobsService } from './lifecycle-jobs.service.js';
@@ -22,9 +19,8 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
     private readonly lifecycleJobsService: LifecycleJobsService,
     private readonly adminPromotionsService: AdminPromotionsService,
     private readonly jobLockService: JobLockService,
-    private readonly db: DbTransactionService,
+    private readonly idempotencyInterceptor: IdempotencyInterceptor,
     private readonly logger: AppLogger,
-    @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
   onModuleInit(): void {
@@ -150,16 +146,7 @@ export class JobsService implements OnModuleInit, OnModuleDestroy {
   async runCleanupIdempotencyKeys(): Promise<number> {
     let count = 0;
     await this.jobLockService.withLock('sporthub-job-cleanupIdempotency', async () => {
-      const exec = await this.db.executor();
-      const result = await exec
-        .request()
-        .input('now', sql.DateTime2(0), toSqlDateTime(this.clock.now()))
-        .query(`
-          DELETE TOP (500)
-          FROM dbo.IdempotencyKeys
-          WHERE ExpiresAt <= @now
-        `);
-      count = result.rowsAffected[0] ?? 0;
+      count = await this.idempotencyInterceptor.cleanupExpiredKeys(500);
     });
     return count;
   }

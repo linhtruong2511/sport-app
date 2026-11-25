@@ -151,6 +151,7 @@ describe('AuthService unit tests', () => {
     const tx: TxContext = {
       request: vi.fn() as unknown as TxContext['request'],
       events: [],
+      afterCommit: [],
       isTransaction: true,
     };
     const exec: DbExecutor = {
@@ -251,7 +252,7 @@ describe('AuthService unit tests', () => {
     });
   });
 
-  it('revokeUserSessions increments tokenVersion, revokes tokens, invalidates cache, and queues auth.revoked', async () => {
+  it('revokeUserSessions increments tokenVersion, revokes tokens, invalidates cache AFTER commit, and queues auth.revoked', async () => {
     const { service, repo, cache, tx } = createServiceHarness();
     cache.set(10, { tokenVersion: 0, status: 'ACTIVE', role: 'STAFF', branchId: 1 });
 
@@ -259,6 +260,12 @@ describe('AuthService unit tests', () => {
 
     expect(repo.incrementTokenVersion).toHaveBeenCalledWith(tx, 10, expect.any(Date));
     expect(repo.revokeAllUserRefreshTokens).toHaveBeenCalledWith(tx, 10, expect.any(Date));
+    // M-8: Cache must still hold old entry until afterCommit hooks run
+    expect(cache.get(10)).not.toBeNull();
+    expect(tx.afterCommit).toHaveLength(1);
+    for (const hook of tx.afterCommit ?? []) {
+      await hook();
+    }
     expect(cache.get(10)).toBeNull();
     expect(tx.events).toEqual([
       {
@@ -336,21 +343,23 @@ describe('RealtimeGateway', () => {
     return socket;
   }
 
-  it('allows guest connection and restricts subscribe to availability', async () => {
+  it('allows guest connection and restricts subscribe to valid availability dates', async () => {
     const gateway = new RealtimeGateway(new RealtimeService());
     const client = makeMockSocket();
 
     await gateway.handleConnection(client as never);
     expect(client.disconnect).not.toHaveBeenCalled();
 
-    gateway.handleSubscribe(client as never, { channel: 'availability', branchId: 1, date: '2026-11-25' });
-    gateway.handleSubscribe(client as never, { channel: 'branch', branchId: 1 });
-    gateway.handleSubscribe(client as never, { channel: 'booking', bookingCode: 'BK2026112501' });
+    await gateway.handleSubscribe(client as never, { channel: 'availability', branchId: 1, date: '2026-11-25' });
+    await gateway.handleSubscribe(client as never, { channel: 'availability', branchId: 1, date: 'invalid-date' });
+    await gateway.handleSubscribe(client as never, { channel: 'availability', branchId: 1, date: '2026-02-30' });
+    await gateway.handleSubscribe(client as never, { channel: 'branch', branchId: 1 });
+    await gateway.handleSubscribe(client as never, { channel: 'booking', bookingCode: 'BK2026112501' });
 
     expect([...client.joined]).toEqual(['availability:1:2026-11-25']);
   });
 
-  it('joins user and branch rooms for authenticated STAFF and enforces branch scope', async () => {
+  it('joins user and branch rooms for authenticated STAFF and enforces branch & booking access (C-1)', async () => {
     const verifier = {
       verifyAccessToken: vi.fn().mockResolvedValue({
         userId: 5,
@@ -359,18 +368,28 @@ describe('RealtimeGateway', () => {
         tv: 0,
       }),
     };
-    const gateway = new RealtimeGateway(new RealtimeService(), verifier);
+    const bookingAccessChecker = {
+      canAccessBooking: vi.fn(async (code: string) => code === 'BK2026112501'),
+    };
+    const gateway = new RealtimeGateway(new RealtimeService(), verifier, bookingAccessChecker);
     const client = makeMockSocket('valid-token');
 
     await gateway.handleConnection(client as never);
     expect(client.joined.has('user:5')).toBe(true);
     expect(client.joined.has('branch:2')).toBe(true);
 
-    gateway.handleSubscribe(client as never, { channel: 'branch', branchId: 1 });
+    await gateway.handleSubscribe(client as never, { channel: 'branch', branchId: 1 });
     expect(client.joined.has('branch:1')).toBe(false);
 
-    gateway.handleSubscribe(client as never, { channel: 'booking', bookingCode: 'BK2026112501' });
+    await gateway.handleSubscribe(client as never, { channel: 'booking', bookingCode: 'BK2026112501' });
     expect(client.joined.has('booking:BK2026112501')).toBe(true);
+
+    await gateway.handleSubscribe(client as never, { channel: 'booking', bookingCode: 'BK_OTHER_BRANCH' });
+    expect(client.joined.has('booking:BK_OTHER_BRANCH')).toBe(false);
+    expect(client.emitted).toContainEqual({
+      event: 'subscribe_error',
+      payload: { channel: 'booking', bookingCode: 'BK_OTHER_BRANCH', code: 'FORBIDDEN' },
+    });
   });
 
   it('emits auth_error and disconnects when token verification fails', async () => {

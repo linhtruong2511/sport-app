@@ -11,6 +11,16 @@ const INIT_SCRIPT_PATH = path.resolve(__dirname, '../../../database/sporthub_ini
 export interface ResetDatabaseOptions {
   database?: string;
   seedSample?: boolean;
+  force?: boolean;
+}
+
+const SAFE_AUTO_RESET_DB_NAMES = new Set(['SportHub_Test', 'SportHub_Dev', 'SportApp']);
+
+function isSafeAutoResetDatabase(databaseName: string): boolean {
+  return (
+    SAFE_AUTO_RESET_DB_NAMES.has(databaseName) ||
+    /^(SportHub|SportApp)_(Test|Dev)$/i.test(databaseName)
+  );
 }
 
 function stripSqlComments(sqlText: string): string {
@@ -23,16 +33,30 @@ function stripSqlComments(sqlText: string): string {
 export async function resetDatabase(options?: ResetDatabaseOptions): Promise<void> {
   const targetDb = options?.database || env.db.database;
   const seedSample = options?.seedSample ?? true;
+  const force = options?.force ?? false;
 
   if (!/^[A-Za-z0-9_]+$/.test(targetDb)) {
     throw new Error(`Invalid database name: ${targetDb}`);
+  }
+
+  if (env.nodeEnv === 'production' && !force) {
+    throw new Error(
+      `Refusing to reset database "${targetDb}" when NODE_ENV=production without --force-i-know.`,
+    );
+  }
+
+  if (!isSafeAutoResetDatabase(targetDb) && !force) {
+    throw new Error(
+      `Refusing to reset database "${targetDb}" (not in test/dev whitelist) without --force-i-know.`,
+    );
   }
 
   let sqlText = await readFile(INIT_SCRIPT_PATH, 'utf8');
   sqlText = sqlText
     .replace(/N'SportHub'/g, `N'${targetDb}'`)
     .replace(/CREATE DATABASE SportHub\b/g, `CREATE DATABASE [${targetDb}]`)
-    .replace(/USE SportHub;/g, `USE [${targetDb}];`);
+    .replace(/USE SportHub;/g, `USE [${targetDb}];`)
+    .replace(/DECLARE @AllowReset BIT = 0;/g, 'DECLARE @AllowReset BIT = 1;');
 
   if (!seedSample) {
     sqlText = sqlText.replace(/DECLARE @SeedSample BIT = 1;/g, 'DECLARE @SeedSample BIT = 0;');
@@ -81,9 +105,11 @@ export async function resetDatabase(options?: ResetDatabaseOptions): Promise<voi
 function parseCliArgs(argv: string[]): ResetDatabaseOptions {
   const dbArg = argv.find((item) => item.startsWith('--db='));
   const noSeed = argv.includes('--no-seed');
+  const force = argv.includes('--force-i-know');
   return {
     database: dbArg ? dbArg.slice('--db='.length) : undefined,
     seedSample: !noSeed,
+    force,
   };
 }
 

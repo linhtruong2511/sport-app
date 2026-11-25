@@ -4,10 +4,22 @@ import { env } from './env.js';
 
 const require = createRequire(import.meta.url);
 
-// Use msnodesqlv8 driver for Windows Authentication (Integrated Security),
-// or default tedious driver for SQL Server Login authentication.
-const sql: typeof sqlTypes =
-  env.db.authType === 'windows' ? require('mssql/msnodesqlv8') : require('mssql');
+function loadSqlDriver(): typeof sqlTypes {
+  if (env.db.authType !== 'windows') {
+    return require('mssql') as typeof sqlTypes;
+  }
+  try {
+    return require('mssql/msnodesqlv8') as typeof sqlTypes;
+  } catch (err) {
+    throw new Error(
+      `Optional dependency "msnodesqlv8" is required when DB_AUTH_TYPE=windows. Use DB_AUTH_TYPE=sql on Linux/production. (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+}
+
+// Use optional msnodesqlv8 driver for Windows Authentication (dev on Windows),
+// or tedious driver for SQL Server Login authentication (Linux/Docker/production).
+const sql: typeof sqlTypes = loadSqlDriver();
 
 let poolPromise: Promise<sqlTypes.ConnectionPool> | null = null;
 

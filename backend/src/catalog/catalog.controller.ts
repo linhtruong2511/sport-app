@@ -29,7 +29,8 @@ export class CatalogController {
     @CurrentUser() user?: AuthenticatedUser,
   ) {
     const data = await this.catalogService.listBranches(query.status, user?.role);
-    return ok(data, this.clock);
+    const totalCourts = data.reduce((sum, b) => sum + b.courtCount, 0);
+    return ok(data, this.clock, { totalCourts });
   }
 
   @Get('sports')

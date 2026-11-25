@@ -12,6 +12,7 @@ import { traceIdMiddleware } from '../http/trace-id.middleware.js';
 describe('core/http security hardening & rate limiting', () => {
   it('allows 10 requests and blocks the 11th with 429 TOO_MANY_REQUESTS, Retry-After, and traceId', async () => {
     const app = express();
+    app.set('trust proxy', 1);
     app.use(traceIdMiddleware);
     app.use('/api/v1/auth/login', authRateLimitMiddleware);
     app.post('/api/v1/auth/login', (_req, res) => {
@@ -45,8 +46,9 @@ describe('core/http security hardening & rate limiting', () => {
     });
   });
 
-  it('tracks independent quotas for distinct x-forwarded-for IPs', async () => {
+  it('uses rightmost proxy-appended IP via trust proxy and ignores client-spoofed leftmost X-Forwarded-For (M-5)', async () => {
     const app = express();
+    app.set('trust proxy', 1);
     app.use(traceIdMiddleware);
     app.use(
       createRateLimitMiddleware({
@@ -59,9 +61,10 @@ describe('core/http security hardening & rate limiting', () => {
       res.status(200).json({ ok: true });
     });
 
-    await request(app).get('/ping').set('x-forwarded-for', '203.0.113.1, 10.0.0.1').expect(200);
-    await request(app).get('/ping').set('x-forwarded-for', '203.0.113.1, 10.0.0.2').expect(200);
-    const blockedIp1 = await request(app).get('/ping').set('x-forwarded-for', '203.0.113.1');
+    // Attacker spoofs leftmost X-Forwarded-For, but Nginx appends real client IP 203.0.113.1 as rightmost hop
+    await request(app).get('/ping').set('x-forwarded-for', '1.1.1.1, 203.0.113.1').expect(200);
+    await request(app).get('/ping').set('x-forwarded-for', '9.9.9.9, 203.0.113.1').expect(200);
+    const blockedIp1 = await request(app).get('/ping').set('x-forwarded-for', '8.8.8.8, 203.0.113.1');
     expect(blockedIp1.status).toBe(429);
 
     const allowedIp2 = await request(app).get('/ping').set('x-forwarded-for', '203.0.113.2');
@@ -72,6 +75,7 @@ describe('core/http security hardening & rate limiting', () => {
   it('resets quota when advancing nowFn past windowMs', async () => {
     let now = 1_700_000_000_000;
     const app = express();
+    app.set('trust proxy', 1);
     app.use(
       createRateLimitMiddleware({
         windowMs: 60_000,

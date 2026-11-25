@@ -18,23 +18,13 @@ interface RateLimitEntry {
 const MAX_STORE_ENTRIES = 10_000;
 
 function extractClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) {
-      return first;
-    }
-  } else if (Array.isArray(forwarded) && forwarded.length > 0) {
-    const first = forwarded[0]?.split(',')[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-
+  // M-5: Rely on Express `req.ip` (configured with `trust proxy = 1` in main.ts) instead of trusting raw client X-Forwarded-For.
   if (typeof req.ip === 'string' && req.ip.trim().length > 0) {
     return req.ip.trim();
   }
-
+  if (typeof req.socket?.remoteAddress === 'string' && req.socket.remoteAddress.trim().length > 0) {
+    return req.socket.remoteAddress.trim();
+  }
   return 'unknown';
 }
 
