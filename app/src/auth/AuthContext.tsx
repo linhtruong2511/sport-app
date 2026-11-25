@@ -85,6 +85,7 @@ function RouterNavigateRegistrar({
 export function AuthProvider({ children, onSessionRevoked }: AuthProviderProps) {
   const [user, setUser] = useState<UserDto | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState<boolean>(true);
+  const [skipReturnRedirect, setSkipReturnRedirect] = useState<boolean>(false);
 
   const inRouter = useInRouterContext();
   const navigateRef = useRef<((to: string) => void) | null>(null);
@@ -98,6 +99,9 @@ export function AuthProvider({ children, onSessionRevoked }: AuthProviderProps) 
   const setAuthenticatedUser = useCallback((nextUser: UserDto | null) => {
     userRef.current = nextUser;
     setUser(nextUser);
+    if (nextUser) {
+      setSkipReturnRedirect(false);
+    }
   }, []);
 
   const handleSessionRevoked = useCallback(
@@ -109,6 +113,7 @@ export function AuthProvider({ children, onSessionRevoked }: AuthProviderProps) 
       }
       clearAccessToken();
       disconnectSocket();
+      setSkipReturnRedirect(true);
       setAuthenticatedUser(null);
       queryClient.clear();
       onSessionRevokedRef.current?.(reason);
@@ -194,8 +199,10 @@ export function AuthProvider({ children, onSessionRevoked }: AuthProviderProps) 
     } finally {
       clearAccessToken();
       disconnectSocket();
+      setSkipReturnRedirect(true);
       setAuthenticatedUser(null);
       queryClient.clear();
+      navigateRef.current?.('/login');
     }
   }, [setAuthenticatedUser]);
 
@@ -221,12 +228,13 @@ export function AuthProvider({ children, onSessionRevoked }: AuthProviderProps) 
       user,
       isBootstrapping,
       isAuthenticated: user !== null,
+      skipReturnRedirect,
       login,
       register,
       logout,
       refreshSession,
     }),
-    [user, isBootstrapping, login, register, logout, refreshSession],
+    [user, isBootstrapping, skipReturnRedirect, login, register, logout, refreshSession],
   );
 
   return (

@@ -5,7 +5,6 @@ import {
   Navigate,
   Outlet,
   useLocation,
-  useNavigate,
   useOutletContext,
 } from 'react-router-dom';
 import type { UserRole } from '@sporthub/shared';
@@ -37,7 +36,7 @@ const ROLE_RANK: Record<UserRole, number> = {
 
 /** Chặn truy cập theo vai trò. Vai trò sau kế thừa giao diện của vai trò trước. */
 export function Guard({ min }: { min: UserRole }) {
-  const { user, isBootstrapping } = useAuth();
+  const { user, isBootstrapping, skipReturnRedirect } = useAuth();
   const loc = useLocation();
   const ctx = useOutletContext();
 
@@ -50,7 +49,9 @@ export function Guard({ min }: { min: UserRole }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />;
+    // Nếu vừa đăng xuất / bị thu hồi phiên, không giữ `from` kẻo chuyển nhầm user kế tiếp
+    const state = skipReturnRedirect ? undefined : { from: loc.pathname + loc.search };
+    return <Navigate to="/login" replace state={state} />;
   }
 
   if (ROLE_RANK[user.role] < ROLE_RANK[min]) {
@@ -63,7 +64,6 @@ export function Guard({ min }: { min: UserRole }) {
 /** Giao diện khách hàng — Trang chủ & Đặt sân mở công khai cho khách chưa đăng nhập. */
 export function CustomerLayout() {
   const { user, logout } = useAuth();
-  const nav = useNavigate();
   const unreadQ = useUnreadNotificationsCount({ enabled: user !== null });
   const unreadCount = unreadQ.data?.unreadCount ?? 0;
 
@@ -71,7 +71,6 @@ export function CustomerLayout() {
 
   const handleLogout = async () => {
     await logout();
-    nav('/login');
   };
 
   return (
@@ -223,7 +222,6 @@ export function StaffLayout() {
   const loc = useLocation();
   const meta = META[loc.pathname] ?? META['/staff/booking'];
   const { user, logout } = useAuth();
-  const nav = useNavigate();
   const branchesQ = useBranches({
     status: user?.role === 'OWNER' ? 'ALL' : 'ACTIVE',
   });
@@ -272,7 +270,6 @@ export function StaffLayout() {
 
   const handleLogout = async () => {
     await logout();
-    nav('/login');
   };
 
   return (

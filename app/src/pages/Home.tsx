@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useBranchSportSummary,
-  useBranches,
+  useBranchesWithMeta,
   useSports,
   type BranchSportHoliday,
   type SportListItem,
@@ -43,11 +43,12 @@ export default function Home() {
   const nav = useNavigate();
   const today = todayVn();
 
-  const branchesQ = useBranches({ status: 'ACTIVE' });
+  const branchesQ = useBranchesWithMeta({ status: 'ACTIVE' });
   const sportsQ = useSports();
   const promotionsQ = usePublicPromotions({ limit: 3 });
 
-  const branches = branchesQ.data ?? [];
+  const branches = branchesQ.data?.items ?? [];
+  const totalCourts = branchesQ.data?.totalCourts ?? 0;
   const sports = sportsQ.data ?? [];
   const promotions = promotionsQ.data ?? [];
 
@@ -62,7 +63,6 @@ export default function Home() {
 
   const summaryQ = useBranchSportSummary(focusBranchId, { date: today });
   const summary = summaryQ.data;
-  const totalCourts = branches.reduce((sum, b) => sum + b.courtCount, 0);
 
   const go = (params: Record<string, string>) => {
     nav(`/booking?${new URLSearchParams(params).toString()}`);

@@ -5,9 +5,7 @@
 ## Nguyên tắc số 1
 
 Frontend **không tính** giá, khuyến mãi, cọc, tiền hoàn, ô trống, KPI, doanh thu, trạng thái được phép. Mọi con số và
-nút thao tác lấy từ API (`/bookings/quote`, `/availability`, `/cancel-preview`, `allowedActions`, `/dashboard/daily`…).
-Prototype hiện tại trong `app/src/domain/` (`slots.ts`, `pricing.ts`, `refund.ts`, `reports.ts`, `affected.ts`) chỉ phục vụ
-chạy độc lập không backend — khi nối API, không port logic tính toán này lên FE; thay bằng gọi API tương ứng.
+nút thao tác lấy từ API (`/bookings/quote`, `/availability`, `/cancel-preview`, `allowedActions`, `/dashboard/daily`, `/reports/revenue`, `/refunds`…).
 
 ## Route và màn hình
 
@@ -16,15 +14,16 @@ chạy độc lập không backend — khi nối API, không port logic tính to
 | `/login` | MH.01 Đăng nhập · MH.03 Đăng ký (tab) | PUBLIC | — |
 | `/` | MH.02 Trang chủ | PUBLIC | CustomerLayout |
 | `/booking` | MH.04 Đặt sân online (`?branchId&sportId&date&promo`) | PUBLIC; giữ chỗ cần CUSTOMER | CustomerLayout |
-| `/payment/:bookingCode` *(prototype hiện dùng `/payment/:id`)* | MH.05 Thanh toán | CUSTOMER | CustomerLayout |
+| `/payment/:bookingCode` | MH.05 Thanh toán | CUSTOMER | CustomerLayout |
 | `/my-bookings` | MH.06 Lịch đặt + thông báo (cột phải) | CUSTOMER | CustomerLayout |
 | `/staff/booking` | MH.07 Đặt sân tại quầy | STAFF, OWNER | StaffLayout |
 | `/staff/orders` | MH.08 Quản lý đơn & nhận sân (`?q=`) | STAFF, OWNER | StaffLayout |
 | `/staff/stats` | MH.09 Thống kê trong ngày | STAFF, OWNER | StaffLayout |
+| `/staff/reconciliation` | MH.14 Đối soát chuyển khoản | STAFF | StaffLayout |
 | `/owner/staff` | MH.10 Nhân viên | OWNER | StaffLayout |
 | `/owner/courts` | MH.11.1/2/3 Sân, khóa sân, giờ mở cửa (tab) | OWNER | StaffLayout |
 | `/owner/reports` | MH.13 Báo cáo (trái) + MH.12 Khuyến mãi (phải) | OWNER | StaffLayout |
-| `/owner/reconciliation` | MH.14 Đối soát & hoàn tiền | OWNER (STAFF: tab giao dịch cơ sở mình) | StaffLayout |
+| `/owner/reconciliation` | MH.14 Đối soát & hoàn tiền | OWNER | StaffLayout |
 
 Sau đăng nhập: CUSTOMER → `/` (hoặc trang trước đó), STAFF → `/staff/booking`, OWNER → `/owner/staff`.
 
@@ -76,9 +75,9 @@ Sau đăng nhập: CUSTOMER → `/` (hoặc trang trước đó), STAFF → `/st
 ## Lệnh
 
 ```bash
-npm run dev     # Vite :5173 (cần cấu hình proxy /api và /socket.io → backend :3000 trong vite.config.ts khi nối API)
+npm run dev     # Vite :5173 (đã cấu hình proxy /api và /socket.io → backend :3000 trong vite.config.ts)
 npm run lint    # oxlint
-npm run build   # tsc -b && vite build
+npm run build   # tsc -b && vite build (route-level code-splitting qua React.lazy)
 ```
 
-Bộ test E2E UI hiện chạy tại `e2e/` (`npm test`). Unit test Vitest + Testing Library chưa cấu hình trong `app/package.json`.
+Bộ test E2E full-stack chạy tại `e2e/` (`npm test -w sporthub-ui-e2e`). Unit test Vitest + Testing Library chưa cấu hình trong `app/package.json`.

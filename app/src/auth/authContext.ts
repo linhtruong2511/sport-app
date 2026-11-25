@@ -12,6 +12,7 @@ export interface AuthContextValue {
   user: UserDto | null;
   isBootstrapping: boolean;
   isAuthenticated: boolean;
+  skipReturnRedirect: boolean;
   login: (input: LoginInput) => Promise<UserDto>;
   register: (input: RegisterInput) => Promise<UserDto>;
   logout: () => Promise<void>;

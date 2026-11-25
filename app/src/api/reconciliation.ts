@@ -252,8 +252,16 @@ export async function ignoreBankTransaction(
   return res.data;
 }
 
+export type RefundsListResponse = ApiListSuccess<RefundItem> & {
+  meta: {
+    total: number;
+    totalAmount: number;
+    countByStatus: Record<RefundStatus, number>;
+  };
+};
+
 // API-72
-export async function getRefunds(params?: GetRefundsParams): Promise<RefundItem[]> {
+export async function getRefundsWithMeta(params?: GetRefundsParams): Promise<RefundsListResponse> {
   const search = new URLSearchParams();
   if (typeof params?.branchId === 'number') {
     search.set('branchId', String(params.branchId));
@@ -262,7 +270,11 @@ export async function getRefunds(params?: GetRefundsParams): Promise<RefundItem[
     search.set('status', params.status);
   }
   const qs = search.toString();
-  const res = await apiFetch<ApiSuccess<RefundItem[]>>(qs ? `/refunds?${qs}` : '/refunds');
+  return apiFetch<RefundsListResponse>(qs ? `/refunds?${qs}` : '/refunds');
+}
+
+export async function getRefunds(params?: GetRefundsParams): Promise<RefundItem[]> {
+  const res = await getRefundsWithMeta(params);
   return res.data;
 }
 
@@ -324,6 +336,14 @@ export function useRefunds(params?: GetRefundsParams, options?: { enabled?: bool
   return useQuery({
     queryKey: reconciliationKeys.refunds(params),
     queryFn: () => getRefunds(params),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useRefundsWithMeta(params?: GetRefundsParams, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: [...reconciliationKeys.refunds(params), 'with-meta'] as const,
+    queryFn: () => getRefundsWithMeta(params),
     enabled: options?.enabled ?? true,
   });
 }

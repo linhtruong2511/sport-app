@@ -88,14 +88,31 @@ export const catalogKeys = {
     ['catalog', 'branch-sport-summary', branchId ?? null, params ?? {}] as const,
 };
 
-export async function getBranchesApi(params?: GetBranchesParams): Promise<BranchListItem[]> {
+export interface BranchesWithMetaResult {
+  items: BranchListItem[];
+  totalCourts: number;
+}
+
+export async function getBranchesWithMetaApi(
+  params?: GetBranchesParams,
+): Promise<BranchesWithMetaResult> {
   const search = new URLSearchParams();
   if (params?.status) {
     search.set('status', params.status);
   }
   const qs = search.toString();
-  const res = await apiFetch<ApiSuccess<BranchListItem[]>>(qs ? `/branches?${qs}` : '/branches');
-  return res.data;
+  const res = await apiFetch<ApiSuccess<BranchListItem[]> & { meta: { totalCourts?: number } }>(
+    qs ? `/branches?${qs}` : '/branches',
+  );
+  return {
+    items: res.data,
+    totalCourts: res.meta.totalCourts ?? 0,
+  };
+}
+
+export async function getBranchesApi(params?: GetBranchesParams): Promise<BranchListItem[]> {
+  const result = await getBranchesWithMetaApi(params);
+  return result.items;
 }
 
 export async function getSportsApi(params?: GetSportsParams): Promise<SportListItem[]> {
@@ -128,6 +145,17 @@ export function useBranches(params?: GetBranchesParams, options?: { enabled?: bo
   return useQuery({
     queryKey: catalogKeys.branches(params),
     queryFn: () => getBranchesApi(params),
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export function useBranchesWithMeta(
+  params?: GetBranchesParams,
+  options?: { enabled?: boolean },
+) {
+  return useQuery({
+    queryKey: [...catalogKeys.branches(params), 'with-meta'] as const,
+    queryFn: () => getBranchesWithMetaApi(params),
     enabled: options?.enabled ?? true,
   });
 }

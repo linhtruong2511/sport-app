@@ -43,6 +43,7 @@ export interface RevenueReportSummary extends Omit<RevenueReportRow, 'key' | 'na
   completedRate: number;
   canceledRate: number;
   expiredRate: number;
+  bankTransferPct: number;
 }
 
 export interface RevenueReportPromotionStats {

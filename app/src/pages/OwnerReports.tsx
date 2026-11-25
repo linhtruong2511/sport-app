@@ -461,10 +461,7 @@ export default function OwnerReports() {
     'Doanh thu ròng',
   ];
 
-  const qrPct =
-    summary && summary.grossCollected > 0
-      ? ((summary.bankTransfer / summary.grossCollected) * 100).toFixed(1).replace('.', ',')
-      : '0';
+  const qrPct = summary ? String(summary.bankTransferPct).replace('.', ',') : '0';
 
   return (
     <>

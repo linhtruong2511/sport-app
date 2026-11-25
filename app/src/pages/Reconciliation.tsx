@@ -21,6 +21,7 @@ import {
   useReconciliationCandidates,
   useReconciliationTransactions,
   useRefunds,
+  useRefundsWithMeta,
   type ReconciliationTransactionItem,
   type RefundItem,
 } from '../api/reconciliation.ts';
@@ -107,7 +108,7 @@ export default function Reconciliation() {
     { enabled: isOwner && tab === 'refund' },
   );
 
-  const pendingRefundsCountQ = useRefunds(
+  const pendingRefundsCountQ = useRefundsWithMeta(
     {
       branchId: scopedBranchId,
       status: 'PENDING',
@@ -125,7 +126,8 @@ export default function Reconciliation() {
 
   const candidates = candidatesQ.data ?? [];
   const refunds = refundsQ.data ?? [];
-  const pendingRefunds = pendingRefundsCountQ.data ?? [];
+  const pendingRefundCount = pendingRefundsCountQ.data?.meta.total ?? 0;
+  const pendingRefundTotalAmount = pendingRefundsCountQ.data?.meta.totalAmount ?? 0;
 
   const invalidateAfterRecon = async () => {
     await Promise.all([
@@ -268,7 +270,7 @@ export default function Reconciliation() {
               style={{ background: activeTab === 'refund' ? undefined : 'var(--s100)' }}
               onClick={() => setTab('refund')}
             >
-              Hoàn tiền chờ xử lý ({pendingRefunds.length})
+              Hoàn tiền chờ xử lý ({pendingRefundCount})
             </button>
           )}
         </div>
@@ -276,7 +278,7 @@ export default function Reconciliation() {
           <span className="t12 c-s600">
             Tổng tiền hoàn chờ xử lý:{' '}
             <b className="c-rose">
-              {vnd(pendingRefunds.reduce((sum, r) => sum + r.amount, 0))}
+              {vnd(pendingRefundTotalAmount)}
             </b>
           </span>
         )}
