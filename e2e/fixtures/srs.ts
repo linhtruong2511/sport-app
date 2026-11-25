@@ -8,13 +8,9 @@ import {
 } from '@playwright/test';
 
 /**
- * Pure-UI Playwright test helper (no backend required).
- * - Default mode (`npm test`): runs all complete prototype UI journeys (100% PASS)
- *   and marks SRS UI gaps as `test.fixme` with exact `UI-XX` audit annotations.
- * - Audit / TDD mode (`npm run test:srs-audit` or `SRS_FULL=1`): executes EVERY
- *   SRS UI compliance test directly against the prototype browser UI.
+ * Playwright helper cho các kịch bản nghiệm thu UI (chạy với Backend + SQL Server SportHub_Test).
+ * - Mặc định: chạy toàn bộ kịch bản; đặt `SRS_FULL=0` để đánh dấu các kịch bản nghiệm thu là `test.fixme`.
  */
-// Prototype đã đáp ứng toàn bộ SRS nên mặc định luôn chạy các kịch bản nghiệm thu (đặt SRS_FULL=0 để quay lại chế độ fixme).
 export const IS_SRS_FULL = process.env.SRS_FULL !== '0' && process.env.SRS_FULL !== 'false';
 
 export type UiTestFn = (

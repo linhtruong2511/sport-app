@@ -5,12 +5,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(__dirname, '..', 'app');
+const BACKEND_DIR = path.resolve(__dirname, '..', 'backend');
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173';
+const BACKEND_HEALTH_URL = process.env.E2E_API_HEALTH_URL || 'http://localhost:3000/api/v1/health/db';
 
-/**
- * Fallback to already-cached Chromium binary in %LOCALAPPDATA%/ms-playwright
- * when Playwright's pinned revision isn't downloaded yet on offline/CI-lite hosts.
- */
 function resolveCachedChromium(): string | undefined {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
     return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
@@ -37,10 +35,11 @@ const cachedExe = resolveCachedChromium();
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
+  globalSetup: './fixtures/global-setup.ts',
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: 1,
   timeout: 30_000,
   expect: {
     timeout: 7_000,
@@ -71,11 +70,26 @@ export default defineConfig({
   ],
   webServer: process.env.E2E_SKIP_WEBSERVER
     ? undefined
-    : {
-        command: 'npm run dev -- --port 5173 --strictPort',
-        cwd: APP_DIR,
-        url: BASE_URL,
-        reuseExistingServer: !process.env.CI,
-        timeout: 60_000,
-      },
+    : [
+        {
+          command: 'npm run build && npm run start',
+          cwd: BACKEND_DIR,
+          url: BACKEND_HEALTH_URL,
+          reuseExistingServer: false,
+          timeout: 60_000,
+          env: {
+            NODE_ENV: 'test',
+            PORT: '3000',
+            TZ: 'Asia/Ho_Chi_Minh',
+            DB_DATABASE: process.env.DB_TEST_DATABASE || 'SportHub_Test',
+          },
+        },
+        {
+          command: 'npm run dev -- --port 5173 --strictPort',
+          cwd: APP_DIR,
+          url: BASE_URL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 60_000,
+        },
+      ],
 });

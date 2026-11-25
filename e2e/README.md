@@ -1,10 +1,6 @@
-# SportHub — Bộ Test UI Prototype bằng Playwright
+# SportHub — Bộ Kiểm thử E2E bằng Playwright
 
-Bộ kiểm thử E2E **thuần giao diện (100% UI Prototype, không cần Backend)** bao phủ:
-- **13 kịch bản liên hoàn đa màn hình & đa vai trò** (`UI-J01` – `UI-J13`) trong `tests/01`–`04`
-- **28 kịch bản nghiệm thu SRS còn thiếu/sai trên Prototype** (`SRS-UI-01` – `SRS-UI-28`) trong `tests/05-srs-ui-compliance-gaps.spec.ts`
-
-Xem chi tiết quy trình tại [`../docs/02-quy-trinh-e2e-test-playwright.md`](../docs/02-quy-trinh-e2e-test-playwright.md).
+Bộ kiểm thử E2E chạy **Full-stack thật** (React SPA `app/` + NestJS Backend `backend/` + SQL Server `SportHub_Test`), tự động reset DB mẫu qua `fixtures/global-setup.ts` trước khi chạy.
 
 ## Lệnh chạy nhanh
 
@@ -12,18 +8,15 @@ Xem chi tiết quy trình tại [`../docs/02-quy-trinh-e2e-test-playwright.md`](
 cd d:\Jobs\Sports\e2e
 npm install
 
-# 1. Chạy toàn bộ 41 kịch bản (13 kịch bản hoàn chỉnh + 28 kịch bản SRS — mặc định `IS_SRS_FULL = true` trong `fixtures/srs.ts`)
+# Chạy toàn bộ bộ kiểm thử E2E (tự động reset SportHub_Test, khởi động backend :3000 và Vite :5173)
 npm test
 
-# 2. Chỉ chạy 13 kịch bản hoàn chỉnh xuyên suốt (01..04)
-npm run test:journeys
+# Chỉ chạy nhóm @smoke
+npm run test:smoke
 
-# 3. Chạy kiểm định toàn bộ 41 kịch bản SRS với cờ SRS_FULL=1 tường minh
-npm run test:srs-audit
-
-# 4. Chạy có giao diện trình duyệt trực quan để quan sát luồng chạy
+# Chạy có giao diện trình duyệt trực quan
 npm run test:headed
 
-# 5. Mở báo cáo HTML (kèm screenshot/video/trace)
+# Mở báo cáo HTML
 npm run report
 ```

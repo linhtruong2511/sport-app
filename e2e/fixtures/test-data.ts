@@ -1,79 +1,65 @@
 export type UserRole = 'customer' | 'staff' | 'owner';
 
+/**
+ * Tài khoản seed thật trong database/sporthub_init.sql (SportHub_Test).
+ */
 export const ACCOUNTS = {
   customer: {
     role: 'customer' as const,
-    roleLabel: 'Khách hàng',
-    phone: '0912345678',
-    seedBookingPhone: '0987654321',
-    email: 'khachhang@sporthub.vn',
-    password: 'Matkhau123',
+    roleLabel: 'Hội viên',
+    phone: '0987654321',
+    email: 'nguyenvanan@gmail.com',
+    password: 'An123456',
     name: 'Nguyễn Văn An',
+  },
+  customer2: {
+    role: 'customer' as const,
+    roleLabel: 'Hội viên',
+    phone: '0912345678',
+    email: 'khachhang@gmail.com',
+    password: 'An123456',
+    name: 'Trần Thị Bình',
   },
   staffCs1: {
     role: 'staff' as const,
     roleLabel: 'Nhân viên thu ngân',
-    phone: '0933445566',
-    email: 'hunglv@sporthub.vn',
+    phone: '0933445577',
+    email: 'trangpt@sporthub.vn',
     password: 'Nv123456',
-    name: 'Lê Văn Hùng',
-    branchId: 'cs1',
+    name: 'Phạm Thu Trang',
+    branchCode: 'CS01',
     branchName: 'Cơ sở 1 - Cầu Giấy',
   },
   staffCs2: {
     role: 'staff' as const,
     roleLabel: 'Nhân viên thu ngân',
-    phone: '0944556677',
-    email: 'maint@sporthub.vn',
+    phone: '0933445566',
+    email: 'hunglv@sanbong.vn',
     password: 'Nv123456',
-    name: 'Nguyễn Thị Mai',
-    branchId: 'cs2',
+    name: 'Lê Văn Hùng',
+    branchCode: 'CS02',
     branchName: 'Cơ sở 2 - Mỹ Đình',
   },
   staffLocked: {
     role: 'staff' as const,
     roleLabel: 'Nhân viên thu ngân',
-    phone: '0911223344',
-    email: 'viethq@sporthub.vn',
+    phone: '0933445588',
+    email: null,
     password: 'Nv123456',
-    name: 'Hoàng Quốc Việt',
+    name: 'Đỗ Minh Tuấn',
   },
   owner: {
     role: 'owner' as const,
     roleLabel: 'Chủ hệ thống sân',
     phone: '0900000001',
-    email: 'chu@sporthub.vn',
-    password: 'Chu123456',
-    name: 'Đặng Quốc Bảo',
+    email: 'owner@sporthub.vn',
+    password: 'Owner@123',
+    name: 'Chủ sân SportHub',
   },
-};
-
-export const DEMO_DATES = {
-  today: '2026-11-12',
-  tomorrow: '2026-11-13',
-  inThreeDays: '2026-11-15', // 2 đến < 5 ngày -> hoàn 50% phần ngoài cọc
-  inSixDays: '2026-11-18', // >= 5 ngày -> hoàn 100% phần ngoài cọc
-  holiday: '2026-12-25',
-  customHoliday: '2026-11-20',
-  emptyMonthFrom: '2026-12-01',
-  emptyMonthTo: '2026-12-31',
-};
-
-export const SEED_BOOKINGS = {
-  customerConfirmed: 'BK2026111001',
-  customerPending: 'BK2026111008',
-  customerCompleted: 'BK2026110502',
-  customerCancelled: 'BK2026110209',
-  otherCustomerPending: 'BK2026111014',
-  staffPlaying: 'BK2026111002',
-  staffOverdue: 'BK2026111005',
-  staffPaidFullConfirmed: 'BK2026111004',
-  staffSameCourtAsPlaying: 'BK2026111021',
 };
 
 export const PROMOS = {
   morning20: 'SANGVUI20',
-  member10: 'TRIAN10',
-  noon15: 'SALEGIOVANG20',
-  counter15: 'QUAYCG15',
+  memberSpecific: 'TRIAN10',
+  pausedPickle: 'PICKLECS01',
 };

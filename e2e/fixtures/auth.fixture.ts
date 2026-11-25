@@ -18,11 +18,6 @@ export async function loginAs(
   }
   await expect(page.locator('#login-identity')).toBeVisible();
 
-  const radio = page.locator('label.radio-card', { hasText: acc.roleLabel }).locator('input[type="radio"]');
-  if (await radio.isVisible().catch(() => false)) {
-    await radio.check();
-  }
-
   await page.locator('#login-identity').fill(override?.identity ?? acc.phone);
   await page.locator('#login-password').fill(override?.password ?? acc.password);
   await page.getByRole('button', { name: 'Đăng nhập ngay' }).click();
@@ -37,12 +32,10 @@ export async function loginAs(
 }
 
 export async function logoutCurrent(page: Page): Promise<void> {
-  const customerLogout = page.getByRole('button', { name: 'Đăng xuất' });
-  const staffLogout = page.getByRole('button', { name: 'Thoát' });
-  if (await customerLogout.isVisible().catch(() => false)) {
-    await customerLogout.click();
-  } else {
-    await staffLogout.click();
-  }
+  const logoutBtn = page
+    .getByRole('button', { name: 'Đăng xuất' })
+    .or(page.getByRole('button', { name: 'Thoát' }));
+  await expect(logoutBtn).toBeVisible();
+  await logoutBtn.click();
   await expect(page).toHaveURL(/\/login/);
 }
