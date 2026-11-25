@@ -7,8 +7,13 @@
   "scripts": {
     "test": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
+    "test:p0": "playwright test --grep @p0",
+    "test:p1": "playwright test --grep @p1",
+    "test:jobs": "playwright test --grep @jobs",
+    "test:realtime": "playwright test --grep @realtime",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
+    "typecheck": "tsc --noEmit",
     "report": "playwright show-report"
   },
   "devDependencies": {

@@ -7,7 +7,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_DIR = path.resolve(__dirname, '..', 'app');
 const BACKEND_DIR = path.resolve(__dirname, '..', 'backend');
 const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:5173';
-const BACKEND_HEALTH_URL = process.env.E2E_API_HEALTH_URL || 'http://localhost:3000/api/v1/health/db';
+const BACKEND_HEALTH_URL =
+  process.env.E2E_API_HEALTH_URL || 'http://localhost:3000/api/v1/health/db';
 
 function resolveCachedChromium(): string | undefined {
   if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
@@ -40,9 +41,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
-  timeout: 30_000,
+  timeout: 45_000,
   expect: {
-    timeout: 7_000,
+    timeout: 8_000,
   },
   reporter: [
     ['list'],
@@ -53,14 +54,25 @@ export default defineConfig({
     baseURL: BASE_URL,
     locale: 'vi-VN',
     timezoneId: 'Asia/Ho_Chi_Minh',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     viewport: { width: 1440, height: 900 },
   },
   projects: [
     {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        ...(cachedExe ? { launchOptions: { executablePath: cachedExe } } : {}),
+      },
+    },
+    {
       name: 'chromium',
+      dependencies: ['setup'],
+      testIgnore: /auth\.setup\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },
@@ -76,7 +88,7 @@ export default defineConfig({
           cwd: BACKEND_DIR,
           url: BACKEND_HEALTH_URL,
           reuseExistingServer: false,
-          timeout: 60_000,
+          timeout: 90_000,
           env: {
             NODE_ENV: 'test',
             PORT: '3000',

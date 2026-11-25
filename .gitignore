@@ -20,3 +20,6 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+# Playwright storageState (chứa cookie refresh token)
+e2e/.auth/

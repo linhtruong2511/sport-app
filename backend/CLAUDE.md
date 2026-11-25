@@ -11,7 +11,7 @@ src/
                    auth (guards, branchScope), idempotency (IN_PROGRESS lock), settings, clock, time, money, codes, realtime, logger
   database/        database.module.ts, database.service.ts
   health/          health.controller.ts, health.module.ts
-  scripts/         testDb.ts, dbReset.ts, dbMigrate.ts
+  scripts/         testDb.ts, dbReset.ts, dbMigrate.ts, e2eTools.ts (R-15: chạy job / dời thời gian cho E2E, chỉ DB *_Test)
   <module>/        auth, catalog, availability, pricing, bookings, payments, pos, promotions,
                    notifications, dashboard, reports, admin/*, affected-bookings, reconciliation
     <module>.module.ts       module NestJS

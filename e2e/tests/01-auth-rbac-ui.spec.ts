@@ -1,13 +1,9 @@
-import { expect } from '@playwright/test';
-import { test } from '../fixtures/srs.js';
+import { expect, test } from '../fixtures/test.js';
+import { waitForAuthRateLimitIfNeeded } from '../fixtures/api.js';
 import { ACCOUNTS } from '../fixtures/test-data.js';
-import { loginAs, logoutCurrent } from '../fixtures/auth.fixture.js';
 
 test.describe('01. E2E Auth, Register & RBAC (Real Backend + SportHub_Test)', () => {
-  test('E2E-01 @smoke Kiểm tra validate form login, đăng nhập 3 vai trò và phân quyền RBAC', async ({
-    page,
-  }) => {
-    // 1. Chưa đăng nhập -> route bảo vệ đẩy về /login
+  test('E2E-01a @smoke Chặn route chưa đăng nhập và validate form đăng nhập', async ({ page }) => {
     await page.goto('/staff/orders');
     await expect(page).toHaveURL(/\/login/);
     await page.goto('/owner/reports');
@@ -27,50 +23,57 @@ test.describe('01. E2E Auth, Register & RBAC (Real Backend + SportHub_Test)', ()
     await expect(page.locator('#login-password')).toHaveAttribute('type', 'password');
     await page.getByRole('button', { name: 'Hiện mật khẩu' }).click();
     await expect(page.locator('#login-password')).toHaveAttribute('type', 'text');
+  });
 
-    // 2. Khách hàng: đăng nhập & bị chặn /staff/*, /owner/*
-    await loginAs(page, 'customer', { skipGoto: true });
-    await expect(page.locator('.logo-name')).toHaveText('SportHub');
-    await expect(page.getByRole('link', { name: 'Đặt sân trực tuyến' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Lịch đặt của tôi' })).toBeVisible();
+  test('E2E-01b @smoke Khách hàng vào giao diện khách và bị chặn /staff/*, /owner/*', async ({
+    customerPage,
+  }) => {
+    await customerPage.goto('/');
+    await expect(customerPage.locator('.logo-name')).toHaveText('SportHub');
+    await expect(customerPage.getByRole('link', { name: 'Đặt sân trực tuyến' })).toBeVisible();
+    await expect(customerPage.getByRole('link', { name: 'Lịch đặt của tôi' })).toBeVisible();
 
-    await page.goto('/staff/booking');
-    await expect(page).toHaveURL(/\/$/);
-    await page.goto('/owner/staff');
-    await expect(page).toHaveURL(/\/$/);
-    await logoutCurrent(page);
+    await customerPage.goto('/staff/booking');
+    await expect(customerPage).toHaveURL(/\/$/);
+    await customerPage.goto('/owner/staff');
+    await expect(customerPage).toHaveURL(/\/$/);
+  });
 
-    // 3. Nhân viên: vào /staff/booking, bị chặn /owner/*, kế thừa giao diện khách hàng
-    await loginAs(page, 'staff');
-    await expect(page).toHaveURL(/\/staff\/booking/);
-    await expect(page.getByText(ACCOUNTS.staffCs1.branchName)).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Quản lý nhân viên' })).toHaveCount(0);
+  test('E2E-01c @smoke Nhân viên vào /staff/*, kế thừa giao diện khách và bị chặn /owner/*', async ({
+    staffPage,
+  }) => {
+    await staffPage.goto('/staff/booking');
+    await expect(staffPage).toHaveURL(/\/staff\/booking/);
+    await expect(staffPage.getByText(ACCOUNTS.staffCs1.branchName)).toBeVisible();
+    await expect(staffPage.getByRole('link', { name: 'Quản lý nhân viên' })).toHaveCount(0);
 
-    await page.getByRole('link', { name: 'Quay lại' }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole('link', { name: '← Về quản lý' })).toBeVisible();
+    await staffPage.getByRole('link', { name: 'Quay lại' }).click();
+    await expect(staffPage).toHaveURL(/\/$/);
+    await expect(staffPage.getByRole('link', { name: '← Về quản lý' })).toBeVisible();
 
-    await page.goto('/owner/courts');
-    await expect(page).toHaveURL(/\/staff\/booking/);
-    await logoutCurrent(page);
+    await staffPage.goto('/owner/courts');
+    await expect(staffPage).toHaveURL(/\/staff\/booking/);
+  });
 
-    // 4. Chủ sân: toàn quyền /owner/* và kế thừa /staff/*, /
-    await loginAs(page, 'owner');
-    await expect(page).toHaveURL(/\/owner\/staff/);
-    await expect(page.getByRole('link', { name: 'Quản lý nhân viên' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Quản lý sân bãi' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Khuyến mãi & Báo cáo' })).toBeVisible();
+  test('E2E-01d @smoke Chủ sân toàn quyền /owner/*, kế thừa /staff/* và giao diện khách', async ({
+    ownerPage,
+  }) => {
+    await ownerPage.goto('/owner/staff');
+    await expect(ownerPage).toHaveURL(/\/owner\/staff/);
+    await expect(ownerPage.getByRole('link', { name: 'Quản lý nhân viên' })).toBeVisible();
+    await expect(ownerPage.getByRole('link', { name: 'Quản lý sân bãi' })).toBeVisible();
+    await expect(ownerPage.getByRole('link', { name: 'Khuyến mãi & Báo cáo' })).toBeVisible();
 
-    await page.getByRole('link', { name: 'Quản lý đơn & Nhận sân' }).click();
-    await expect(page).toHaveURL(/\/staff\/orders/);
-    await page.getByRole('link', { name: 'Giao diện Khách đặt sân' }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await page.getByRole('link', { name: '← Về quản lý' }).click();
-    await expect(page).toHaveURL(/\/owner\/staff/);
-    await logoutCurrent(page);
+    await ownerPage.getByRole('link', { name: 'Quản lý đơn & Nhận sân' }).click();
+    await expect(ownerPage).toHaveURL(/\/staff\/orders/);
+    await ownerPage.getByRole('link', { name: 'Giao diện Khách đặt sân' }).click();
+    await expect(ownerPage).toHaveURL(/\/$/);
+    await ownerPage.getByRole('link', { name: '← Về quản lý' }).click();
+    await expect(ownerPage).toHaveURL(/\/owner\/staff/);
   });
 
   test('E2E-02 Đăng ký hội viên mới qua Backend API + SQL Server', async ({ page }) => {
+    await waitForAuthRateLimitIfNeeded(1);
     await page.goto('/login');
     await page.getByRole('button', { name: 'Đăng ký hội viên mới' }).click();
 

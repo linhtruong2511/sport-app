@@ -75,6 +75,18 @@ SDD 3.5a: `EffectiveFrom ≤ thời điểm tạo đơn < EffectiveTo`, không t
 - Frontend: React 19 + Vite 8 + TypeScript + React Router 7 + TanStack Query + `socket.io-client` + `qrcode.react` (`app/`).
 - Monorepo npm workspaces (`@sporthub/shared`, `sportapp-backend`, `app`, `sporthub-ui-e2e`).
 
+### R-15. Kích hoạt job nền và dời thời gian trong E2E (từ Q-E1, Q-E2 của `e2e_comprehensive_plan.md`)
+> **Trạng thái:** chủ dự án chốt theo đề xuất ngày 25/11/2026.
+- Backend E2E chạy `NODE_ENV=test` nên cron bị tắt (`jobs.service.ts`). E2E kích hoạt job bằng script **chạy một lần, tiến trình riêng**
+  `backend/src/scripts/e2eTools.ts`. **Không** thêm endpoint chỉ dành cho test, **không** dùng đồng hồ giả cho cả backend.
+- Dùng **đồng hồ thật**. Muốn "tới giờ" thì dời dữ liệu của chính đơn test: `expire-hold` (đưa `HoldExpireAt` và QR `PENDING`
+  về quá khứ), `shift-booking` (dời `StartAt/EndAt`, `BookingSlots`, `BookingPriceLines` cùng một khoảng, trong một transaction).
+  Va chạm ô vẫn bị `UX_BookingSlots_Court_Slot` chặn.
+- Script chỉ chạy khi `NODE_ENV=test` **và** tên DB có hậu tố `_Test`, ngược lại thoát với lỗi.
+- Hệ quả: job chạy ngoài tiến trình server nên **không phát socket** (`RealtimeService` bỏ qua khi không có server). Test phải
+  reload hoặc chờ API sau khi chạy job. Job quét toàn bảng, nên đơn nhắm tới phải nằm ở làn dữ liệu riêng của spec.
+- E2E chuẩn bị dữ liệu **qua API**. SQL trực tiếp chỉ được dùng qua `e2eTools.ts` cho việc dời thời gian.
+
 ---
 
 ## Các mục Q-xx đã triển khai theo mặc định (lưu vết tham chiếu)
