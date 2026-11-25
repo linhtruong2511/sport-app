@@ -38,7 +38,7 @@ export default function VietQrBox({
   if (variant === 'compact') {
     return (
       <div
-        className="row g12"
+        className="row g12 wrap"
         style={{
           background: 'var(--s100)',
           border: '1px solid var(--s300)',
@@ -58,14 +58,14 @@ export default function VietQrBox({
         >
           <QRCodeSVG value={qrPayload} size={96} />
         </div>
-        <div className="t12 c-s700 col g4">
+        <div className="t12 c-s700 col g4 f1">
           <b className="c-ink">
             Khách quét mã để chuyển <span data-testid={amountTestId}>{vnd(amount)}</span>
           </b>
           <span>
             {bankName} • STK {bankAccountNo}
           </span>
-          <span>
+          <span className="break-word">
             Nội dung: <b data-testid={contentTestId}>{transferContent}</b>
           </span>
         </div>
@@ -74,43 +74,25 @@ export default function VietQrBox({
   }
 
   return (
-    <div
-      className="row g24 wrap"
-      style={{
-        background: 'var(--s100)',
-        border: '1px solid var(--s300)',
-        borderRadius: 16,
-        padding: 20,
-      }}
-    >
-      <div
-        className="col g8"
-        style={{
-          background: '#fff',
-          border: '2px solid var(--brand-700)',
-          borderRadius: 16,
-          padding: 16,
-          boxShadow: 'var(--shadow-sm)',
-          alignItems: 'center',
-        }}
-      >
+    <div className="vietqr-box">
+      <div className="col g8 vietqr-qr">
         <div data-testid={imgTestId}>
           <QRCodeSVG value={qrPayload} size={176} />
         </div>
         <span className="t11 w700 c-brand8">VietQR • Đã điền sẵn số tiền</span>
       </div>
-      <div className="col g10 f1">
+      <div className="col g10 f1" style={{ minWidth: 220 }}>
         <div className="hint" style={{ background: '#fff', padding: 12 }}>
           <div className="c-s500">Ngân hàng nhận:</div>
-          <b className="t14 w800 c-ink">{bankName}</b>
+          <b className="t14 w800 c-ink break-word">{bankName}</b>
         </div>
-        <div className="hint row between" style={{ background: '#fff', padding: 12 }}>
-          <div>
+        <div className="hint row between wrap g8" style={{ background: '#fff', padding: 12 }}>
+          <div style={{ minWidth: 0 }}>
             <div className="c-s500">Số tài khoản:</div>
-            <b className="t14 w800 c-ink">{bankAccountNo}</b>
+            <b className="t14 w800 c-ink mono break-word">{bankAccountNo}</b>
           </div>
           <div className="col g4" style={{ alignItems: 'flex-end' }}>
-            <b className="t11 c-brand8">{bankAccountName}</b>
+            <b className="t11 c-brand8 break-word">{bankAccountName}</b>
             <button
               type="button"
               className="link-btn"
@@ -121,7 +103,7 @@ export default function VietQrBox({
           </div>
         </div>
         <div
-          className="hint row between"
+          className="hint row between wrap g8"
           style={{
             background: 'rgba(209,250,229,.8)',
             borderColor: 'var(--gray-200)',
@@ -150,10 +132,10 @@ export default function VietQrBox({
             Đúng số tiền
           </span>
         </div>
-        <div className="hint row between" style={{ background: '#fff', padding: 12 }}>
-          <div>
+        <div className="hint row between wrap g8" style={{ background: '#fff', padding: 12 }}>
+          <div className="f1">
             <div className="c-s500">Nội dung chuyển khoản:</div>
-            <b className="t14 w800 c-ink" data-testid={contentTestId ?? 'qr-content'}>
+            <b className="t14 w800 c-ink break-word" data-testid={contentTestId ?? 'qr-content'}>
               {transferContent}
             </b>
           </div>

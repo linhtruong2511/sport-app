@@ -30,10 +30,10 @@ export default function BookingDetailModal({
         style={{ maxWidth: 620, maxHeight: '88vh', overflow: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="row between g12">
+        <div className="row between wrap g8">
           <h3 className="t18 w800 c-ink">Chi tiết đơn #{bookingCode}</h3>
           {b && (
-            <div className="row g6">
+            <div className="row g6 wrap">
               <span className="badge b-gray">{BOOKING_STATUS_LABELS[b.status]}</span>
               <span className="badge b-sky">{PAYMENT_STATUS_LABELS[b.paymentStatus]}</span>
             </div>
@@ -90,9 +90,9 @@ export default function BookingDetailModal({
                   ],
                 ] as [string, string][]
               ).map(([k, v]) => (
-                <div className="row between g12" key={k}>
-                  <span className="c-s600">{k}</span>
-                  <b className="c-ink" style={{ textAlign: 'right' }}>
+                <div className="row between g12" style={{ alignItems: 'flex-start' }} key={k}>
+                  <span className="c-s600 nowrap">{k}</span>
+                  <b className="c-ink right break-word">
                     {v}
                   </b>
                 </div>
@@ -112,7 +112,10 @@ export default function BookingDetailModal({
                   }}
                 >
                   {b.priceLines.map((pl, idx) => (
-                    <div key={`${pl.startTime}-${idx}`} className="row between t11 c-s700">
+                    <div
+                      key={`${pl.startTime}-${idx}`}
+                      className="row between wrap g8 t11 c-s700"
+                    >
                       <span>
                         {pl.label} ({pl.startTime} - {pl.endTime} • {vnd(pl.pricePerHour)}/h)
                       </span>
@@ -151,7 +154,7 @@ export default function BookingDetailModal({
               <div className="col g6">
                 <b className="t12 c-ink">Phiếu thu đã ghi nhận</b>
                 {b.payments.map((p) => (
-                  <div key={p.paymentCode} className="row between t11 c-s700">
+                  <div key={p.paymentCode} className="row between wrap g8 t11 c-s700">
                     <span>
                       <b className="mono c-ink">{p.paymentCode}</b> • {p.method} ({p.purpose}) •{' '}
                       {formatDateTimeVn(p.paidAt)}

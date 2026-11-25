@@ -80,7 +80,7 @@ export default function Home() {
   return (
     <>
       {/* Hero + khung tìm kiếm */}
-      <section className="hero col g20" style={{ padding: '32px 32px 28px' }}>
+      <section className="hero hero-home col g20">
         <span
           className="badge"
           style={{
@@ -88,18 +88,19 @@ export default function Home() {
             background: 'rgba(4,120,87,.8)',
             border: '1px solid rgba(16,185,129,.4)',
             color: 'var(--brand-100)',
+            whiteSpace: 'normal',
           }}
         >
           ⚡ Hệ thống {branches.length} Chi nhánh • {totalCourts} Sân tiêu chuẩn thi đấu
         </span>
-        <h1 style={{ fontSize: 32, lineHeight: '40px', fontWeight: 800, maxWidth: 700, letterSpacing: -0.4 }}>
-          Tìm sân nhanh, xem giờ trống trực tiếp & giữ sân chỉ trong 1 phút
+        <h1 className="hero-title">
+          Tìm sân nhanh, xem giờ trống trực tiếp &amp; giữ sân chỉ trong 1 phút
         </h1>
         <p className="t14" style={{ maxWidth: 720, color: 'var(--brand-100)', lineHeight: '22.75px' }}>
           Không cần gọi điện chờ đợi. Chọn khung giờ yêu thích trên bảng lịch, thanh toán trọn gói
           hoặc đặt cọc giữ chỗ qua mã QR và nhận thông báo nhắc lịch trước giờ chơi.
         </p>
-        <div className="search-card" style={{ gridTemplateColumns: 'repeat(3, 1fr) auto' }}>
+        <div className="search-card search-card-3">
           <div>
             <label className="label" htmlFor="home-branch">
               Chi nhánh
@@ -159,8 +160,7 @@ export default function Home() {
           </div>
           <button
             type="button"
-            className="btn btn-primary btn-lg"
-            style={{ height: 44 }}
+            className="btn btn-primary btn-lg search-card-btn"
             disabled={!effectiveBranchId || !effectiveSportId}
             onClick={handleSearch}
           >
@@ -186,7 +186,7 @@ export default function Home() {
 
       {/* Khuyến mãi */}
       <section className="col g12">
-        <div className="row between">
+        <div className="row between wrap g8">
           <div className="col g2">
             <h2 className="t18 w800 c-ink">Mã ưu đãi dành cho bạn</h2>
             <p className="t12 c-s600">
@@ -194,54 +194,56 @@ export default function Home() {
             </p>
           </div>
           <button type="button" className="link-btn" onClick={() => nav('/booking')}>
-            Đặt sân & dùng mã →
+            Đặt sân &amp; dùng mã →
           </button>
         </div>
-        <div className="row g16" style={{ alignItems: 'stretch' }}>
-          {promotionsQ.isLoading && (
-            <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
-              Đang tải chương trình ưu đãi...
-            </div>
-          )}
-          {promotionsQ.isError && (
-            <div className="hint f1" style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}>
-              {extractErrorMessage(promotionsQ.error, 'Không thể tải danh sách ưu đãi.')}
-            </div>
-          )}
-          {!promotionsQ.isLoading && !promotionsQ.isError && promotions.length === 0 && (
-            <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
-              Hiện chưa có chương trình ưu đãi nào đang chạy.
-            </div>
-          )}
-          {promotions.slice(0, 3).map((p, i) => (
-            <div key={p.code} className={`promo-card f1${i === 0 ? ' first' : ''}`}>
-              <div className="row between g12">
-                <span
-                  className={`badge sq ${PROMO_TONES[i % PROMO_TONES.length]}`}
-                  style={{ padding: '2px 10px', fontSize: 11 }}
-                >
-                  {p.audienceType === 'SPECIFIC' ? 'Ưu đãi hội viên' : p.name}
-                </span>
-                <span className="code-chip">{p.code}</span>
+        {promotionsQ.isLoading && (
+          <div className="hint" style={{ textAlign: 'center', padding: 24 }}>
+            Đang tải chương trình ưu đãi...
+          </div>
+        )}
+        {promotionsQ.isError && (
+          <div className="hint" style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}>
+            {extractErrorMessage(promotionsQ.error, 'Không thể tải danh sách ưu đãi.')}
+          </div>
+        )}
+        {!promotionsQ.isLoading && !promotionsQ.isError && promotions.length === 0 && (
+          <div className="hint" style={{ textAlign: 'center', padding: 24 }}>
+            Hiện chưa có chương trình ưu đãi nào đang chạy.
+          </div>
+        )}
+        {!promotionsQ.isLoading && !promotionsQ.isError && promotions.length > 0 && (
+          <div className="promo-grid">
+            {promotions.slice(0, 3).map((p, i) => (
+              <div key={p.code} className={`promo-card${i === 0 ? ' first' : ''}`}>
+                <div className="row between wrap g8">
+                  <span
+                    className={`badge sq ${PROMO_TONES[i % PROMO_TONES.length]}`}
+                    style={{ padding: '2px 10px', fontSize: 11 }}
+                  >
+                    {p.audienceType === 'SPECIFIC' ? 'Ưu đãi hội viên' : p.name}
+                  </span>
+                  <span className="code-chip">{p.code}</span>
+                </div>
+                <h3 className="t14 w800 c-ink" style={{ marginTop: 4 }}>
+                  Giảm {formatPromoSummary(p.discountType, p.discountValue, p.maxDiscountAmount)}
+                  {p.timeFrom && p.timeTo
+                    ? ` khung ${p.timeFrom} - ${p.timeTo}`
+                    : ' tất cả khung giờ'}
+                </h3>
+                <p className="t12 c-s600">
+                  {p.scopeText} • HSD: {toVN(p.endDate)}
+                </p>
+                <div className="row between" style={{ marginTop: 'auto' }}>
+                  <span />
+                  <button type="button" className="link-btn" onClick={() => go({ promo: p.code })}>
+                    Dùng ngay
+                  </button>
+                </div>
               </div>
-              <h3 className="t14 w800 c-ink" style={{ marginTop: 4 }}>
-                Giảm {formatPromoSummary(p.discountType, p.discountValue, p.maxDiscountAmount)}
-                {p.timeFrom && p.timeTo
-                  ? ` khung ${p.timeFrom} - ${p.timeTo}`
-                  : ' tất cả khung giờ'}
-              </h3>
-              <p className="t12 c-s600">
-                {p.scopeText} • HSD: {toVN(p.endDate)}
-              </p>
-              <div className="row between" style={{ marginTop: 'auto' }}>
-                <span />
-                <button type="button" className="link-btn" onClick={() => go({ promo: p.code })}>
-                  Dùng ngay
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Cụm sân & chi nhánh */}
@@ -263,22 +265,27 @@ export default function Home() {
               📅 Hôm nay ({toVN(today)}) chi nhánh nghỉ lễ: {holidayText}.
             </div>
           )}
-          <div className="row wrap g16" style={{ alignItems: 'stretch' }}>
-            {summaryQ.isLoading && (
-              <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
-                Đang tải thông tin cụm sân...
-              </div>
-            )}
-            {summaryQ.isError && (
-              <div
-                className="hint f1"
-                style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}
-              >
-                {extractErrorMessage(summaryQ.error, 'Không thể tải thông tin cụm sân.')}
-              </div>
-            )}
-            {summary &&
-              summary.sports.map((sp) => {
+          {summaryQ.isLoading && (
+            <div className="hint" style={{ textAlign: 'center', padding: 24 }}>
+              Đang tải thông tin cụm sân...
+            </div>
+          )}
+          {summaryQ.isError && (
+            <div
+              className="hint"
+              style={{ textAlign: 'center', padding: 24, color: 'var(--rose-700)' }}
+            >
+              {extractErrorMessage(summaryQ.error, 'Không thể tải thông tin cụm sân.')}
+            </div>
+          )}
+          {!summaryQ.isLoading && !summaryQ.isError && summary && summary.sports.length === 0 && (
+            <div className="hint" style={{ textAlign: 'center', padding: 24 }}>
+              Chi nhánh này hiện chưa có sân đang hoạt động.
+            </div>
+          )}
+          {summary && summary.sports.length > 0 && (
+            <div className="cluster-grid">
+              {summary.sports.map((sp) => {
                 const free = sp.freeSlotCount;
                 const branchOpenText = summary.branch.holiday
                   ? 'Nghỉ lễ'
@@ -298,9 +305,9 @@ export default function Home() {
                   : formatDepositRule(null, null);
 
                 return (
-                  <div key={sp.sportId} className="cluster" style={{ width: 'calc(50% - 8px)' }}>
+                  <div key={sp.sportId} className="cluster">
                     <div className="cluster-body">
-                      <div className="row between g8">
+                      <div className="row between wrap g8">
                         <span
                           className="badge sq b-green"
                           style={{ padding: '2px 10px', fontSize: 11 }}
@@ -320,7 +327,7 @@ export default function Home() {
                         Cụm sân {sp.name} ({sp.courtCount} sân)
                       </h3>
                       <p className="t12 c-s600">📍 {summary.branch.address}</p>
-                      <div className="row g24" style={{ marginTop: 4 }}>
+                      <div className="row wrap g16" style={{ marginTop: 4 }}>
                         <div className="col">
                           <span className="t11 c-s500">Giờ mở cửa hôm nay:</span>
                           <b className="t12 c-ink w800">{branchOpenText}</b>
@@ -350,20 +357,13 @@ export default function Home() {
                   </div>
                 );
               })}
-            {!summaryQ.isLoading &&
-              !summaryQ.isError &&
-              summary &&
-              summary.sports.length === 0 && (
-                <div className="hint f1" style={{ textAlign: 'center', padding: 24 }}>
-                  Chi nhánh này hiện chưa có sân đang hoạt động.
-                </div>
-              )}
-          </div>
+            </div>
+          )}
         </div>
 
         <aside className="span4 col g16">
           <div className="card col g12">
-            <div className="row between">
+            <div className="row between wrap g8">
               <h3 className="t14 w800 c-ink">Hệ thống chi nhánh SportHub</h3>
               <span className="t11 w700 c-brand">Đang hoạt động</span>
             </div>
@@ -387,7 +387,7 @@ export default function Home() {
                   setSelectedBranchId(b.branchId);
                 }}
               >
-                <div className="row between">
+                <div className="row between wrap g8">
                   <span className="t12 w800 c-ink">📍 {b.name}</span>
                   <span className="t12 w700 c-s800">{b.courtCount} sân</span>
                 </div>

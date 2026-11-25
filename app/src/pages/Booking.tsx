@@ -470,8 +470,8 @@ export default function Booking() {
             </span>
           </div>
         </div>
-        <div className="row g16 wrap" style={{ alignItems: 'flex-end' }}>
-          <div className="f1">
+        <div className="booking-filters">
+          <div>
             <label className="label" htmlFor="booking-branch">
               Chi nhánh
             </label>
@@ -493,7 +493,7 @@ export default function Booking() {
               )}
             </select>
           </div>
-          <div className="f1">
+          <div>
             <label className="label" htmlFor="booking-sport">
               Bộ môn
             </label>
@@ -515,7 +515,7 @@ export default function Booking() {
               )}
             </select>
           </div>
-          <div className="f1">
+          <div>
             <label className="label" htmlFor="booking-date">
               Ngày đặt lịch
             </label>
@@ -529,7 +529,7 @@ export default function Booking() {
             />
           </div>
           <div
-            className="f1 hint hint-green col g2"
+            className="hint hint-green col g2"
             style={{ borderColor: 'var(--brand-100)', background: 'var(--brand-50)' }}
           >
             <span className="w700 c-brand9">
@@ -595,7 +595,7 @@ export default function Booking() {
 
           {availabilityQ.isError && (
             <div
-              className="hint row between g12"
+              className="hint row between wrap g12"
               style={{
                 background: 'var(--rose-50)',
                 borderColor: 'var(--rose-300)',
@@ -614,6 +614,16 @@ export default function Booking() {
               </button>
             </div>
           )}
+
+          {!availabilityQ.isLoading &&
+            availability &&
+            courts.length > 0 &&
+            visibleSlotIdxs.length > 0 &&
+            !allSlotsPast && (
+              <div className="sched-scroll-tip">
+                ← Vuốt ngang bảng lịch để xem đầy đủ các khung giờ →
+              </div>
+            )}
 
           <div className="tbl-wrap">
             <table className="sched">
@@ -788,8 +798,8 @@ export default function Booking() {
         </section>
 
         <aside
-          className="span4 card card-lg card-raise col g16"
-          style={{ position: 'sticky', top: 80 }}
+          id="booking-summary-aside"
+          className="span4 card card-lg card-raise col g16 booking-aside"
         >
           <div className="col g2 head-rule">
             <span className="eyebrow">Phiếu đặt sân</span>
@@ -805,24 +815,24 @@ export default function Booking() {
           ) : (
             <>
               <div className="col g10 t12">
-                <div className="row between">
-                  <span className="c-s600">Chi nhánh:</span>
-                  <b className="c-ink">
+                <div className="row between g8" style={{ alignItems: 'flex-start' }}>
+                  <span className="c-s600 nowrap">Chi nhánh:</span>
+                  <b className="c-ink right break-word">
                     {quote?.court.branchName ??
                       availability?.branch.name ??
                       activeBranch?.name ??
                       '—'}
                   </b>
                 </div>
-                <div className="row between">
-                  <span className="c-s600">Sân thi đấu:</span>
-                  <b className="c-brand w800">
+                <div className="row between g8" style={{ alignItems: 'flex-start' }}>
+                  <span className="c-s600 nowrap">Sân thi đấu:</span>
+                  <b className="c-brand w800 right break-word">
                     {quote?.court.name ?? activeSelection.court.name}
                   </b>
                 </div>
-                <div className="row between g12">
+                <div className="row between g12" style={{ alignItems: 'flex-start' }}>
                   <span className="c-s600 nowrap">Thời gian thuê:</span>
-                  <b className="c-ink" style={{ textAlign: 'right' }}>
+                  <b className="c-ink right">
                     {toVN(date)} • {activeSelection.startTime} - {activeSelection.endTime} (
                     {formatDurationLabel(
                       quote?.durationMinutes ?? activeSelection.durationMinutes,
@@ -838,13 +848,14 @@ export default function Booking() {
                   {quote.priceLines.map((line) => (
                     <div
                       key={`${line.startTime}-${line.endTime}-${line.label}`}
-                      className="row between t12"
+                      className="row between g8 t12"
+                      style={{ alignItems: 'flex-start' }}
                     >
-                      <span className="c-s600">
+                      <span className="c-s600 f1">
                         {line.label} ({line.startTime}–{line.endTime} • {money(line.pricePerHour)}
                         /h)
                       </span>
-                      <b className="c-ink">{vnd(line.amount)}</b>
+                      <b className="c-ink nowrap">{vnd(line.amount)}</b>
                     </div>
                   ))}
                 </div>
@@ -857,7 +868,7 @@ export default function Booking() {
                 <div className="row g8">
                   <input
                     id="booking-promo"
-                    className="input sm bold"
+                    className="input sm bold f1"
                     style={{ padding: '10px 14px', fontSize: 14 }}
                     value={promoInput}
                     placeholder="Nhập mã ưu đãi"
@@ -1065,6 +1076,30 @@ export default function Booking() {
           )}
         </aside>
       </div>
+
+      {activeSelection && (
+        <div className="mobile-booking-bar">
+          <div className="col g2 f1">
+            <span className="t12 w700 c-white break-word">
+              {activeSelection.court.name} • {activeSelection.startTime}–{activeSelection.endTime}
+            </span>
+            <span className="t11" style={{ color: 'var(--brand-300)' }}>
+              {quote ? `Thanh toán ngay: ${vnd(quote.amountDueNow)}` : 'Đang tính báo giá...'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-md"
+            onClick={() =>
+              document
+                .getElementById('booking-summary-aside')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          >
+            Xem phiếu đặt ↓
+          </button>
+        </div>
+      )}
     </>
   );
 }

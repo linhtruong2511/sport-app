@@ -179,7 +179,7 @@ export default function CancelBookingModal({
                 <button
                   key={preset}
                   type="button"
-                  className={`btn btn-xs ${selected ? 'btn-primary' : 'btn-outline'}`}
+                  className={`btn btn-xs btn-wrap ${selected ? 'btn-primary' : 'btn-outline'}`}
                   onClick={() => {
                     setReason(preset);
                     setErrorMsg('');
@@ -206,7 +206,7 @@ export default function CancelBookingModal({
 
         {errorMsg && <p className="field-err">{errorMsg}</p>}
 
-        <div className="row g8" style={{ justifyContent: 'flex-end' }}>
+        <div className="row g8 wrap" style={{ justifyContent: 'flex-end' }}>
           <button
             type="button"
             className="btn btn-outline btn-md"

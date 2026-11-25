@@ -64,12 +64,35 @@ export function Guard({ min }: { min: UserRole }) {
 /** Giao diện khách hàng — Trang chủ & Đặt sân mở công khai cho khách chưa đăng nhập. */
 export function CustomerLayout() {
   const { user, logout } = useAuth();
+  const loc = useLocation();
+  const currentLocKey = `${loc.pathname}${loc.search}`;
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const menuOpen = openMenuKey === currentLocKey;
   const unreadQ = useUnreadNotificationsCount({ enabled: user !== null });
   const unreadCount = unreadQ.data?.unreadCount ?? 0;
 
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 901px)');
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setOpenMenuKey(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenMenuKey(null);
+    };
+    mql.addEventListener('change', onChange);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      mql.removeEventListener('change', onChange);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
   const cls = ({ isActive }: { isActive: boolean }) => `nav-link${isActive ? ' active' : ''}`;
+  const mobileCls = ({ isActive }: { isActive: boolean }) =>
+    `mobile-nav-link${isActive ? ' active' : ''}`;
 
   const handleLogout = async () => {
+    setOpenMenuKey(null);
     await logout();
   };
 
@@ -77,15 +100,15 @@ export function CustomerLayout() {
     <div className="col" style={{ minHeight: '100vh' }}>
       <header className="hdr">
         <div className="container hdr-in">
-          <div className="row g32">
-            <Link to="/" className="row g10">
+          <div className="hdr-left">
+            <Link to="/" className="row g10" style={{ minWidth: 0 }}>
               <div className="logo-mark">S</div>
-              <div className="col g4" style={{ paddingBottom: 2 }}>
+              <div className="col g4" style={{ paddingBottom: 2, minWidth: 0 }}>
                 <span className="logo-name">SportHub</span>
-                <span className="logo-sub">Đặt sân thể thao trực tuyến</span>
+                <span className="logo-sub nowrap">Đặt sân thể thao trực tuyến</span>
               </div>
             </Link>
-            <nav className="row g6">
+            <nav className="hdr-nav" aria-label="Điều hướng chính">
               <NavLink to="/" end className={cls}>
                 Trang chủ
               </NavLink>
@@ -97,8 +120,8 @@ export function CustomerLayout() {
               </NavLink>
             </nav>
           </div>
-          {user ? (
-            <div className="row g12">
+          <div className="hdr-right">
+            {user && (
               <Link to="/my-bookings" className="bell" aria-label="Thông báo" title="Thông báo">
                 <img src={bell} alt="" width={20} height={20} />
                 {unreadCount > 0 && (
@@ -109,44 +132,145 @@ export function CustomerLayout() {
                   />
                 )}
               </Link>
-              <div className="user-box">
-                <div className="avatar">{initials(user.fullName)}</div>
-                <div className="col right">
-                  <span className="t12 w700 c-ink nowrap">{user.fullName}</span>
-                  <span className="t11 w500 c-brand nowrap">{user.title}</span>
-                </div>
-                {user.role !== 'CUSTOMER' && (
-                  <Link
-                    to={homeOf(user.role)}
+            )}
+            {user ? (
+              <div className="hdr-user-desktop">
+                <div className="user-box">
+                  <div className="avatar">{initials(user.fullName)}</div>
+                  <div className="col right">
+                    <span className="t12 w700 c-ink nowrap">{user.fullName}</span>
+                    <span className="t11 w500 c-brand nowrap">{user.title}</span>
+                  </div>
+                  {user.role !== 'CUSTOMER' && (
+                    <Link
+                      to={homeOf(user.role)}
+                      className="btn btn-outline btn-sm"
+                      style={{ marginLeft: 4 }}
+                    >
+                      ← Về quản lý
+                    </Link>
+                  )}
+                  <button
+                    type="button"
                     className="btn btn-outline btn-sm"
-                    style={{ marginLeft: 4 }}
+                    style={{ marginLeft: 4, fontWeight: 600 }}
+                    onClick={() => void handleLogout()}
                   >
-                    ← Về quản lý
-                  </Link>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  style={{ marginLeft: 4, fontWeight: 600 }}
-                  onClick={() => void handleLogout()}
-                >
-                  Đăng xuất
-                </button>
+                    Đăng xuất
+                  </button>
+                </div>
               </div>
+            ) : (
+              <div className="hdr-user-desktop row g8">
+                <Link to="/login" className="btn btn-outline btn-md">
+                  Đăng nhập
+                </Link>
+                <Link to="/login" state={{ tab: 'register' }} className="btn btn-primary btn-md">
+                  Đăng ký
+                </Link>
+              </div>
+            )}
+            <div className="hdr-mobile-actions">
+              {!user && (
+                <Link to="/login" className="btn btn-primary btn-sm">
+                  Đăng nhập
+                </Link>
+              )}
+              <button
+                type="button"
+                className="hdr-burger"
+                aria-label={menuOpen ? 'Đóng menu' : 'Mở menu'}
+                aria-expanded={menuOpen}
+                onClick={() =>
+                  setOpenMenuKey((prev) => (prev === currentLocKey ? null : currentLocKey))
+                }
+              >
+                {menuOpen ? '✕' : '☰'}
+              </button>
             </div>
-          ) : (
-            <div className="row g8">
-              <Link to="/login" className="btn btn-outline btn-md">
-                Đăng nhập
-              </Link>
-              <Link to="/login" state={{ tab: 'register' }} className="btn btn-primary btn-md">
-                Đăng ký
-              </Link>
-            </div>
-          )}
+          </div>
         </div>
+        {menuOpen && (
+          <div className="mobile-nav open">
+            <nav className="mobile-nav-links" aria-label="Menu di động">
+              <NavLink
+                to="/"
+                end
+                className={mobileCls}
+                onClick={() => setOpenMenuKey(null)}
+              >
+                Trang chủ
+              </NavLink>
+              <NavLink
+                to="/booking"
+                className={mobileCls}
+                onClick={() => setOpenMenuKey(null)}
+              >
+                Đặt sân trực tuyến
+              </NavLink>
+              <NavLink
+                to="/my-bookings"
+                className={mobileCls}
+                onClick={() => setOpenMenuKey(null)}
+              >
+                Lịch đặt của tôi
+              </NavLink>
+            </nav>
+            <div className="top-rule col g10">
+              {user ? (
+                <>
+                  <div className="row between g10">
+                    <div className="row g10" style={{ minWidth: 0 }}>
+                      <div className="avatar">{initials(user.fullName)}</div>
+                      <div className="col" style={{ minWidth: 0 }}>
+                        <span className="t12 w700 c-ink break-word">{user.fullName}</span>
+                        <span className="t11 w500 c-brand">{user.title}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="row g8 wrap">
+                    {user.role !== 'CUSTOMER' && (
+                      <Link
+                        to={homeOf(user.role)}
+                        className="btn btn-outline btn-md f1"
+                        onClick={() => setOpenMenuKey(null)}
+                      >
+                        ← Về quản lý
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-md f1"
+                      onClick={() => void handleLogout()}
+                    >
+                      Đăng xuất
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="row g8">
+                  <Link
+                    to="/login"
+                    className="btn btn-outline btn-md f1"
+                    onClick={() => setOpenMenuKey(null)}
+                  >
+                    Đăng nhập
+                  </Link>
+                  <Link
+                    to="/login"
+                    state={{ tab: 'register' }}
+                    className="btn btn-primary btn-md f1"
+                    onClick={() => setOpenMenuKey(null)}
+                  >
+                    Đăng ký
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </header>
-      <main className="container col g24" style={{ flex: 1, padding: '32px 24px 64px' }}>
+      <main className="container col g24 customer-main">
         <Outlet />
       </main>
     </div>

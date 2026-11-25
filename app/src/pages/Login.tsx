@@ -180,11 +180,11 @@ export default function Login() {
     <div className="col" style={{ minHeight: '100vh' }}>
       <header className="hdr">
         <div className="container hdr-in">
-          <div className="row g12">
+          <div className="row g12" style={{ minWidth: 0 }}>
             <div className="logo-mark">S</div>
-            <div className="col g4" style={{ paddingBottom: 2.5 }}>
+            <div className="col g4" style={{ paddingBottom: 2.5, minWidth: 0 }}>
               <span className="logo-name">SportHub</span>
-              <span className="logo-sub">Hệ thống đặt lịch sân thể thao</span>
+              <span className="logo-sub nowrap">Hệ thống đặt lịch sân thể thao</span>
             </div>
           </div>
           <button
@@ -195,6 +195,7 @@ export default function Login() {
               border: '1px solid var(--gray-200)',
               color: 'var(--brand-700)',
               padding: '8px 14px',
+              flex: 'none',
             }}
             onClick={() => nav('/')}
           >
@@ -203,16 +204,10 @@ export default function Login() {
         </div>
       </header>
 
-      <main
-        className="container"
-        style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '48px 16px' }}
-      >
-        <div
-          className="grid12"
-          style={{ width: '100%', gap: 32, alignItems: 'center', maxWidth: 1152, margin: '0 auto' }}
-        >
-          <div className="col g24" style={{ gridColumn: 'span 5' }}>
-            <div className="hero col g20" style={{ padding: 28, background: 'var(--brand-800)' }}>
+      <main className="container login-main">
+        <div className="grid12 login-grid">
+          <div className="span5 col g24">
+            <div className="hero col g20 login-hero-box">
               <span
                 className="badge"
                 style={{
@@ -220,6 +215,7 @@ export default function Login() {
                   background: 'rgba(4,120,87,.8)',
                   border: '1px solid rgba(16,185,129,.4)',
                   color: 'var(--brand-100)',
+                  whiteSpace: 'normal',
                 }}
               >
                 ⚽ Đặt sân nhanh chóng • Giữ lịch tức thì
@@ -259,8 +255,8 @@ export default function Login() {
                 ))}
               </div>
             </div>
-            <div className="card row between g12" style={{ borderRadius: 16 }}>
-              <div className="col g2">
+            <div className="card row between wrap g12" style={{ borderRadius: 16 }}>
+              <div className="col g2 f1">
                 <span className="t12 w700 c-ink">
                   Cần hỗ trợ mở khóa tài khoản hoặc đặt sân cố định?
                 </span>
@@ -274,10 +270,7 @@ export default function Login() {
             </div>
           </div>
 
-          <div
-            className="card card-raise"
-            style={{ gridColumn: 'span 7', padding: '0 0 32px', overflow: 'hidden' }}
-          >
+          <div className="span7 card card-raise login-form-card">
             <div className="auth-tabs">
               <button
                 type="button"
@@ -298,8 +291,7 @@ export default function Login() {
             {tab === 'login' ? (
               <form
                 noValidate
-                className="col g20"
-                style={{ padding: '32px 32px 0' }}
+                className="col g20 login-form"
                 onSubmit={(e) => void submitLogin(e)}
               >
                 <div className="col g2">
@@ -358,7 +350,7 @@ export default function Login() {
                     {submitting ? 'Đang đăng nhập...' : 'Đăng nhập ngay'}
                   </button>
                 </div>
-                <div className="row between top-rule" style={{ paddingTop: 16 }}>
+                <div className="row between wrap g8 top-rule" style={{ paddingTop: 16 }}>
                   <span className="t12 c-s700">Bạn chưa có tài khoản đặt sân?</span>
                   <button
                     type="button"
@@ -372,8 +364,7 @@ export default function Login() {
             ) : (
               <form
                 noValidate
-                className="col g16"
-                style={{ padding: '32px 32px 0' }}
+                className="col g16 login-form"
                 onSubmit={(e) => void submitRegister(e)}
               >
                 <div className="col g2">
@@ -472,7 +463,7 @@ export default function Login() {
                 >
                   {submitting ? 'Đang tạo tài khoản...' : 'Đăng ký & Bắt đầu đặt sân'}
                 </button>
-                <div className="row between top-rule">
+                <div className="row between wrap g8 top-rule">
                   <span className="t12 c-s700">Đã có tài khoản?</span>
                   <button type="button" className="link-btn" onClick={() => switchTab('login')}>
                     Quay lại đăng nhập →

@@ -95,7 +95,7 @@ export default function NotificationInbox({
       className="span4 card col g16"
       style={{ boxShadow: 'var(--shadow-sm)', alignSelf: 'flex-start' }}
     >
-      <div className="row between head-rule">
+      <div className="row between wrap g8 head-rule">
         <div className="row g8">
           <i
             style={{
@@ -103,6 +103,7 @@ export default function NotificationInbox({
               height: 10,
               borderRadius: 9999,
               background: 'var(--brand-700)',
+              flex: 'none',
             }}
           />
           <h2 className="t16 w800 c-ink" style={{ lineHeight: '24px' }}>
@@ -122,7 +123,7 @@ export default function NotificationInbox({
       <div className="row g8">
         <select
           data-testid="notif-filter-type"
-          className="select sm"
+          className="select sm f1"
           value={type}
           onChange={(e) => setType(e.target.value as NotificationType | 'all')}
         >
@@ -134,7 +135,7 @@ export default function NotificationInbox({
         </select>
         <select
           data-testid="notif-filter-read"
-          className="select sm"
+          className="select sm f1"
           value={readFilter}
           onChange={(e) => setReadFilter(e.target.value as 'all' | 'unread' | 'read')}
         >
@@ -175,9 +176,9 @@ export default function NotificationInbox({
             padding: 16,
           }}
         >
-          <div className="row between g8">
-            <b className="t12 c-ink">{n.title}</b>
-            <b className="t10 c-s500" style={{ fontWeight: 600 }}>
+          <div className="row between wrap g6" style={{ alignItems: 'flex-start' }}>
+            <b className="t12 c-ink break-word">{n.title}</b>
+            <b className="t10 c-s500 nowrap" style={{ fontWeight: 600 }}>
               {formatDateTimeVn(n.createdAt)}
             </b>
           </div>

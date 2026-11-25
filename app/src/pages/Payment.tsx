@@ -68,7 +68,7 @@ export default function Payment() {
 
   if (!bookingCode) {
     return (
-      <div className="card col g12 center" style={{ padding: 48, maxWidth: 560, margin: '0 auto' }}>
+      <div className="card status-card col g12 center">
         <h1 className="t18 w800">Không tìm thấy mã đơn đặt sân</h1>
         <Link className="btn btn-primary" to="/booking">
           Đặt sân mới
@@ -79,7 +79,7 @@ export default function Payment() {
 
   if (detailQ.isLoading) {
     return (
-      <div className="card col g12 center" style={{ padding: 48, maxWidth: 560, margin: '0 auto' }}>
+      <div className="card status-card col g12 center">
         <span className="t14 c-s600">Đang tải thông tin thanh toán đơn #{bookingCode}...</span>
       </div>
     );
@@ -89,14 +89,14 @@ export default function Payment() {
     const err = detailQ.error;
     const isForbidden = err instanceof ApiError && err.status === 403;
     return (
-      <div className="card col g12 center" style={{ padding: 48, maxWidth: 560, margin: '0 auto' }}>
-        <h1 className="t18 w800 c-ink">
+      <div className="card status-card col g12 center">
+        <h1 className="t18 w800 c-ink" style={{ textAlign: 'center' }}>
           {isForbidden ? 'Không có quyền truy cập đơn đặt sân này' : 'Không tìm thấy đơn đặt sân'}
         </h1>
         <p className="t12 c-s600" style={{ textAlign: 'center' }}>
           {extractErrorMessage(err, 'Đơn đặt sân không tồn tại hoặc bạn không có quyền xem.')}
         </p>
-        <div className="row g8">
+        <div className="row g8 wrap center">
           <Link className="btn btn-outline" to="/booking">
             Đặt sân mới
           </Link>
@@ -111,7 +111,7 @@ export default function Payment() {
   if (b.status === 'CONFIRMED' || b.status === 'IN_USE' || b.status === 'COMPLETED') {
     const hrs = b.durationMinutes / 60;
     return (
-      <div className="card col g16" style={{ padding: 32, maxWidth: 620, margin: '0 auto' }}>
+      <div className="card status-card col g16">
         <div className="col g4" style={{ alignItems: 'center' }}>
           <span
             className="center t20 c-white"
@@ -124,7 +124,9 @@ export default function Payment() {
           >
             ✓
           </span>
-          <h1 className="t18 w800 c-ink">Biên nhận thanh toán thành công</h1>
+          <h1 className="t18 w800 c-ink" style={{ textAlign: 'center' }}>
+            Biên nhận thanh toán thành công
+          </h1>
           <p className="t12 c-s600" style={{ textAlign: 'center' }}>
             Đơn #{b.bookingCode} ({BOOKING_STATUS_LABELS[b.status]} •{' '}
             {PAYMENT_STATUS_LABELS[b.paymentStatus]}). Bạn có thể xem chi tiết trong &ldquo;Lịch đặt
@@ -154,7 +156,7 @@ export default function Payment() {
             />
           ))}
         </div>
-        <div className="row g8" style={{ justifyContent: 'center' }}>
+        <div className="row g8 wrap center">
           <Link className="btn btn-outline" to="/booking">
             Đặt sân khác
           </Link>
@@ -169,11 +171,8 @@ export default function Payment() {
   if (b.status === 'EXPIRED' || b.status === 'CANCELED') {
     const isExpired = b.status === 'EXPIRED';
     return (
-      <div
-        className="card col g12"
-        style={{ padding: 40, alignItems: 'center', maxWidth: 560, margin: '0 auto' }}
-      >
-        <h1 className="t18 w800 c-ink">
+      <div className="card status-card col g12" style={{ alignItems: 'center' }}>
+        <h1 className="t18 w800 c-ink" style={{ textAlign: 'center' }}>
           {isExpired ? 'Đơn đã quá hạn thanh toán' : 'Đơn đặt sân đã bị hủy'}
         </h1>
         <p className="t12 c-s600" style={{ textAlign: 'center' }}>
@@ -183,7 +182,7 @@ export default function Payment() {
               ? `Đơn #${b.bookingCode} đã bị hủy (${b.cancel.reason}).`
               : `Đơn #${b.bookingCode} đã bị hủy và khung giờ đã được mở lại.`}
         </p>
-        <div className="row g8">
+        <div className="row g8 wrap center">
           <Link className="btn btn-outline" to="/my-bookings">
             Lịch đặt của tôi
           </Link>
@@ -263,16 +262,8 @@ export default function Payment() {
   return (
     <>
       <div className="col g24" style={{ maxWidth: 976, margin: '0 auto', width: '100%' }}>
-        <div
-          className="row between wrap g16"
-          style={{
-            background: 'var(--amber-100)',
-            border: '2px solid var(--amber-400)',
-            borderRadius: 16,
-            padding: 16,
-          }}
-        >
-          <div className="row g14">
+        <div className="row between wrap g16 hold-banner">
+          <div className="row g14 f1" style={{ alignItems: 'flex-start' }}>
             <span
               className="center t20 w700 c-white"
               style={{
@@ -280,11 +271,12 @@ export default function Payment() {
                 height: 44,
                 borderRadius: 12,
                 background: 'var(--amber-500)',
+                flex: 'none',
               }}
             >
               ⏳
             </span>
-            <div className="col">
+            <div className="col f1">
               <span className="t14 w800" style={{ color: 'var(--amber-950)' }}>
                 Đơn đặt sân #{b.bookingCode} đang chờ bạn thanh toán
               </span>
@@ -294,15 +286,7 @@ export default function Payment() {
               </span>
             </div>
           </div>
-          <div
-            className="col center"
-            style={{
-              background: '#fff',
-              border: '1px solid var(--amber-400)',
-              borderRadius: 12,
-              padding: '8px 16px',
-            }}
-          >
+          <div className="col center hold-timer-box">
             <span className="t10 w700 upper" style={{ color: 'var(--s500)', lineHeight: '15px' }}>
               Thời gian giữ chỗ
             </span>
@@ -320,14 +304,14 @@ export default function Payment() {
 
         <div className="grid12">
           <section className="span7 card card-lg col g20">
-            <div className="row between g12 head-rule" style={{ paddingBottom: 16 }}>
+            <div className="row between wrap g12 head-rule" style={{ paddingBottom: 16 }}>
               <div className="col">
                 <h1 className="t18 w800 c-ink">Quét mã QR để thanh toán</h1>
                 <p className="t12 c-s600">
                   Mở ứng dụng Ngân hàng bất kỳ và quét mã VietQR bên dưới
                 </p>
               </div>
-              <div className="col g4" style={{ alignItems: 'flex-end' }}>
+              <div className="qr-head-meta">
                 <span
                   className="badge b-green-flat"
                   style={{ border: '1px solid var(--gray-200)', color: 'var(--brand-800)' }}
@@ -482,7 +466,7 @@ export default function Payment() {
 
           <aside className="span5 col g16">
             <div className="card card-lg col g16">
-              <div className="row between g12 head-rule">
+              <div className="row between wrap g8 head-rule">
                 <h2 className="t16 w800 c-ink" style={{ lineHeight: '24px' }}>
                   Chi tiết đơn #{b.bookingCode}
                 </h2>
@@ -518,14 +502,14 @@ export default function Payment() {
                     ['Còn lại thanh toán khi nhận sân:', vnd(b.remainingAmount), ''],
                   ] as const
                 ).map(([k, v, cls]) => (
-                  <div className="row between g12" key={k}>
+                  <div className="row between g12" style={{ alignItems: 'flex-start' }} key={k}>
                     <span className="c-s600">{k}</span>
-                    <b className={cls || 'c-ink'} style={{ textAlign: 'right' }}>
+                    <b className={`${cls || 'c-ink'} right break-word`}>
                       {v}
                     </b>
                   </div>
                 ))}
-                <div className="row between top-rule" style={{ paddingTop: 8 }}>
+                <div className="row between wrap g8 top-rule" style={{ paddingTop: 8 }}>
                   <span className="c-s600">Trạng thái thanh toán:</span>
                   <b className="c-amber">{PAYMENT_STATUS_LABELS[b.paymentStatus]}</b>
                 </div>
@@ -561,9 +545,9 @@ export default function Payment() {
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="row between g12 t12">
+    <div className="row between g12 t12" style={{ alignItems: 'flex-start' }}>
       <span className="c-s600">{k}</span>
-      <b className="c-ink" style={{ textAlign: 'right' }}>
+      <b className="c-ink right break-word">
         {v}
       </b>
     </div>

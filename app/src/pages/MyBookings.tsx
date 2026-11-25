@@ -153,21 +153,20 @@ export default function MyBookings() {
   return (
     <>
       <section className="card row between wrap g16">
-        <div className="col g2">
+        <div className="col g2 f1" style={{ minWidth: 220 }}>
           <h1 className="t20 w800 c-ink">Lịch đặt sân của tôi &amp; Thông báo</h1>
           <p className="t12 c-s600">
             Theo dõi các lịch sắp diễn ra, kiểm tra số tiền còn thiếu khi nhận sân và xem tin nhắn
             ưu đãi từ sân.
           </p>
         </div>
-        <div className="col g4" style={{ alignItems: 'flex-end' }}>
+        <div className="col g4 myb-date-wrap">
           <div className="row g8 wrap">
             <span className="t12 w600 c-s600">Thời gian đặt:</span>
             <input
               data-testid="my-bookings-from"
               type="date"
-              className="input sm"
-              style={{ width: 'auto' }}
+              className="input sm myb-date-input"
               value={draft.from}
               onChange={(e) => handleEditRange('from', e.target.value)}
             />
@@ -175,8 +174,7 @@ export default function MyBookings() {
             <input
               data-testid="my-bookings-to"
               type="date"
-              className="input sm"
-              style={{ width: 'auto' }}
+              className="input sm myb-date-input"
               value={draft.to}
               onChange={(e) => handleEditRange('to', e.target.value)}
             />
@@ -191,14 +189,14 @@ export default function MyBookings() {
 
       <div className="grid12">
         <div className="span8 col g16">
-          <div className="row g8" style={{ overflow: 'auto', paddingBottom: 4 }}>
+          <div className="tabs-scroll">
             {TABS.map(([k, label]) => (
               <button
                 key={k}
                 type="button"
                 data-testid={`tab-${k}`}
                 className={`btn ${tab === k ? 'btn-primary' : 'btn-outline'}`}
-                style={{ fontWeight: tab === k ? 700 : 600, whiteSpace: 'nowrap' }}
+                style={{ fontWeight: tab === k ? 700 : 600, whiteSpace: 'nowrap', flex: 'none' }}
                 onClick={() => handleSelectTab(k)}
               >
                 {label} ({statusCounts ? statusCounts[k] : 0})
@@ -240,7 +238,7 @@ export default function MyBookings() {
             list.map((b) => {
               const head = (
                 <div className="row between wrap g12 head-rule" style={{ rowGap: 8 }}>
-                  <div className="row g10">
+                  <div className="row g10 wrap" style={{ minWidth: 0 }}>
                     <span
                       className="mono t11 w800 c-ink"
                       style={{
@@ -252,11 +250,11 @@ export default function MyBookings() {
                     >
                       #{b.bookingCode}
                     </span>
-                    <span className="t14 w800 c-ink">
+                    <span className="t14 w800 c-ink break-word">
                       {b.branchName} • {b.courtName}
                     </span>
                   </div>
-                  <div className="row g8">{renderBadges(b)}</div>
+                  <div className="row g8 wrap">{renderBadges(b)}</div>
                 </div>
               );
 
@@ -360,7 +358,7 @@ export default function MyBookings() {
               return (
                 <div key={b.bookingCode} className="card col g16">
                   {head}
-                  <div className="row g12 wrap" style={{ alignItems: 'flex-start' }}>
+                  <div className="info-grid">
                     <Info k="Thời gian chơi:" v={`${toVN(b.date)} • ${b.startTime} - ${b.endTime}`} />
                     <Info k="Tổng tiền đơn:" v={vnd(b.totalAmount)} />
                     <Info
@@ -388,27 +386,27 @@ export default function MyBookings() {
                   </div>
                   <div className="row between wrap g12 top-rule" style={{ rowGap: 12 }}>
                     {isPending ? (
-                      <span className="t12 w700 c-amber">
+                      <span className="t12 w700 c-amber f1" style={{ minWidth: 200 }}>
                         {holdRemainingMs > 0
                           ? `⏳ Hệ thống đang giữ chỗ tạm thời cho bạn (còn ${formatCountdown(holdRemainingMs)}).`
                           : '⏳ Hết thời gian giữ chỗ, hệ thống đang cập nhật trạng thái...'}
                       </span>
                     ) : b.status === 'IN_USE' ? (
-                      <span className="t12 w500 c-s700">
+                      <span className="t12 w500 c-s700 f1" style={{ minWidth: 200 }}>
                         🟢 Bạn đang sử dụng sân đến {b.endTime}.
                       </span>
                     ) : b.isOverdue ? (
-                      <span className="t12 w700 c-rose">
+                      <span className="t12 w700 c-rose f1" style={{ minWidth: 200 }}>
                         ⚠️ Đã quá giờ nhận sân. Vui lòng liên hệ quầy lễ tân.
                       </span>
                     ) : (
-                      <span className="t12 w500 c-s700">
+                      <span className="t12 w500 c-s700 f1" style={{ minWidth: 200 }}>
                         🔔 Lịch chơi diễn ra lúc {b.startTime}{' '}
                         {b.date === today ? 'hôm nay' : `ngày ${toVN(b.date)}`}. Vui lòng đến quầy
                         lễ tân trước 10 phút để nhận sân.
                       </span>
                     )}
-                    <div className="row g8">
+                    <div className="row g8 wrap">
                       {detailBtn}
                       {canPay && (
                         <Link
@@ -437,7 +435,7 @@ export default function MyBookings() {
             })}
 
           {totalPages > 1 && (
-            <div className="row between card" style={{ padding: '12px 16px' }}>
+            <div className="row between wrap g12 card" style={{ padding: '12px 16px' }}>
               <span className="t12 c-s600">
                 Trang {meta?.page ?? page} / {totalPages} • Tổng {meta?.totalItems ?? 0} đơn
               </span>
