@@ -87,6 +87,21 @@ SDD 3.5a: `EffectiveFrom ≤ thời điểm tạo đơn < EffectiveTo`, không t
   reload hoặc chờ API sau khi chạy job. Job quét toàn bảng, nên đơn nhắm tới phải nằm ở làn dữ liệu riêng của spec.
 - E2E chuẩn bị dữ liệu **qua API**. SQL trực tiếp chỉ được dùng qua `e2eTools.ts` cho việc dời thời gian.
 
+### R-16. Ô lịch POS theo từng môn; tất toán không tự nhận sân; "còn lại khi nhận sân" tính ở giao diện
+> **Trạng thái:** chủ dự án chốt ngày 25/11/2026 sau khi kiểm thử thủ công (3 lỗi).
+- **Ô lịch API-25 (`GET /pos/schedule`).** SDD chỉ có một `slotMinutes` và một dãy `slots` chung nên khi bỏ trống `sportId` mà
+  lấy ước chung lớn nhất (gcd) của các `DisplayBlockMinutes` thì ô Pickleball (120') bị chẻ thành 60' — giá hiển thị còn một nửa.
+  Chốt: **mỗi sân dựng `cells[]` theo `DisplayBlockMinutes` của môn mình**. `slots`/`slotMinutes` ở đầu response chỉ là lưới thời gian
+  mịn nhất (header), một ô của sân có thể chiếm nhiều cột (`colSpan = (end − start) / slotMinutes`). Khi lọc một môn, hai bên trùng nhau như cũ.
+  Giới hạn đã biết: API tạo đơn vẫn chỉ kiểm bội số của `GridBlockMinutes` (R-05), nên gọi API trực tiếp vẫn đặt được khung nhỏ hơn ô hiển thị.
+- **Tất toán (API-33) chỉ thu tiền.** Bỏ trường `checkIn` và bước chuyển `IN_USE`: sau khi thu đủ, đơn giữ `CONFIRMED` + `PAID`
+  (hết tình trạng NV quên bỏ tích nên đơn "Đang sử dụng" khi còn gần 30' mới tới giờ). Bỏ luôn hai kiểm tra `CHECK_IN_TOO_EARLY` theo
+  `CHECKIN_EARLY_MINUTES` và `COURT_IN_USE` ở API này — hai kiểm tra đó thuộc API-34. Vẫn yêu cầu ngày chơi là hôm nay.
+  Chuyển sang `IN_USE`: NV bấm "Nhận sân" (API-34) trong cửa sổ `CHECKIN_EARLY_MINUTES`. **Chưa có job tự chuyển `IN_USE` theo giờ** — xem Q-16.
+- **`remainingAmount` giữ nguyên nghĩa** (= `TotalAmount − PaidAmount`, tức còn nợ tại thời điểm hiện tại; đơn chờ thanh toán thì bằng cả tổng tiền).
+  Không thêm trường mới vào DTO. Màn thanh toán (MH.05) của đơn `PENDING_PAYMENT` tự hiển thị "Còn lại khi nhận sân" = `totalAmount − amountDueNow`;
+  đây là ngoại lệ có chủ đích với nguyên tắc "FE không tính tiền", chỉ áp dụng cho dòng hiển thị này.
+
 ---
 
 ## Các mục Q-xx đã triển khai theo mặc định (lưu vết tham chiếu)
@@ -137,6 +152,13 @@ Tính trừ `Bookings.RefundAmount` theo `CanceledAt` trong kỳ (kể cả khi 
 
 ### Q-15. Nhận sân khi chưa tới giờ — *đã chốt thành R-12*
 Đã chốt `CHECKIN_EARLY_MINUTES = 15` trong `SystemSettings` (migration `004_checkin_early_minutes.sql`).
+Lưu ý: giá trị này nằm trong DB nên mỗi môi trường có thể khác (dev đang để 30, test để 15) — kiểm `SystemSettings` khi nghi ngờ.
+
+### Q-16. Hệ thống tự chuyển đơn sang `IN_USE` theo giờ — *chưa chốt*
+Sau R-16, tất toán không còn tự nhận sân. Chủ dự án muốn "sân chuyển Đang sử dụng do hệ thống tự tính theo giờ" nhưng chưa có job nào làm việc này.
+Cần chốt trước khi code vì xung đột với R-04: `closePaidNoShows` nhận diện no-show bằng `CheckedInAt IS NULL` tại `EndAt`; nếu tự nhận sân tại `StartAt`
+thì đơn đã trả đủ mà khách không đến sẽ thành `COMPLETED` thay vì `CANCELED/NO_SHOW`, và doanh thu/no-show khác đi.
+Phương án: (a) giữ nhận sân thủ công; (b) job `autoCheckIn` chỉ tự chuyển `IN_USE` khi đơn `PAID` và `now ≥ StartAt`, bỏ qua nếu sân còn đơn `IN_USE`; (c) chỉ *hiển thị* ô "đang chơi" theo giờ mà không đổi `Status`.
 
 ---
 

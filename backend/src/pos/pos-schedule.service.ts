@@ -268,7 +268,16 @@ export class PosScheduleService {
       const minPricePerHour = prices.length > 0 ? Math.min(...prices) : 0;
       const maxPricePerHour = prices.length > 0 ? Math.max(...prices) : 0;
 
-      const cells: PosScheduleCell[] = rawSlots.map((s) =>
+      // R-16: mỗi sân dựng ô theo DisplayBlockMinutes của chính môn đó (Pickleball 120, bóng đá 90…).
+      // `slots` ở header chỉ là lưới thời gian mịn nhất khi xem nhiều môn, không phải độ rộng ô của từng sân.
+      const courtSlots = buildTimeSlots(
+        openTime,
+        closeTime,
+        isClosed,
+        data.holiday !== null,
+        court.displayBlockMinutes,
+      );
+      const cells: PosScheduleCell[] = courtSlots.map((s) =>
         this.resolvePosCell({
           date: query.date,
           start: s.start,

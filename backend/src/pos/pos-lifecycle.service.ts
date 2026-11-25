@@ -38,7 +38,7 @@ export class PosLifecycleService {
     return this.settingsService.getInt('CHECKIN_EARLY_MINUTES');
   }
 
-  // API-33: Settle remaining balance (CASH) and optionally check in immediately
+  // API-33 / R-16: chỉ thu phần còn lại bằng tiền mặt. Đơn giữ CONFIRMED (PAID); việc chuyển IN_USE do API-34 / hệ thống theo giờ.
   async settleBooking(
     bookingCode: string,
     dto: PosSettleDto,
@@ -49,10 +49,7 @@ export class PosLifecycleService {
       throw new AppError('BOOKING_STATE_CHANGED');
     }
 
-    const [noShowGraceMinutes, checkInEarlyMinutes] = await Promise.all([
-      this.settingsService.getInt('NO_SHOW_GRACE_MINUTES'),
-      this.getCheckInEarlyMinutes(),
-    ]);
+    const noShowGraceMinutes = await this.settingsService.getInt('NO_SHOW_GRACE_MINUTES');
     const now = this.clock.now();
 
     return this.txService.withTransaction(async (tx) => {
@@ -90,28 +87,6 @@ export class PosLifecycleService {
 
       const bookingId = Number(booking.BookingId);
 
-      // Check check-in preconditions and COURT_IN_USE BEFORE taking cash!
-      if (dto.checkIn) {
-        if (now.getTime() < addMinutes(startAt, -checkInEarlyMinutes).getTime()) {
-          throw new AppError(
-            'CHECK_IN_TOO_EARLY',
-            `Chưa đến thời gian cho phép nhận sân (tối đa trước giờ chơi ${checkInEarlyMinutes} phút).`,
-          );
-        }
-
-        const blockingBookingCode = await this.repo.findActiveInUseBookingOnCourt(
-          tx,
-          Number(booking.CourtId),
-          bookingId,
-        );
-        if (blockingBookingCode) {
-          throw new AppError('COURT_IN_USE', {
-            message: `Sân đang được sử dụng bởi đơn trước (#${blockingBookingCode}). Vui lòng chờ khách trước trả sân.`,
-            details: { blockingBookingCode },
-          });
-        }
-      }
-
       await this.paymentsService.cancelPendingRequestsInTx(tx, bookingId);
 
       const paymentRes = await this.bookingState.applyPaymentInTx(tx, booking, {
@@ -125,25 +100,6 @@ export class PosLifecycleService {
         historyNote: 'Tất toán tiền mặt tại quầy',
         historyChangedBy: caller.userId,
       });
-
-      if (dto.checkIn) {
-        const nextVerBuf = decodeRowVer(paymentRes.version);
-        if (!nextVerBuf) {
-          throw new AppError('INTERNAL_ERROR');
-        }
-
-        const updatedBookingForCheckIn = {
-          ...booking,
-          PaymentStatus: paymentRes.nextPaymentStatus,
-          PaidAmount: paymentRes.paidAmount,
-          RemainingAmount: paymentRes.remainingAmount,
-        };
-        await this.bookingState.checkInInTx(tx, updatedBookingForCheckIn, {
-          expectedVersion: nextVerBuf,
-          changedBy: caller.userId,
-          now,
-        });
-      }
 
       const customerUserId =
         booking.CustomerUserId !== null ? Number(booking.CustomerUserId) : null;
@@ -222,21 +178,6 @@ export class PosLifecycleService {
           version: summary.version,
         },
       });
-
-      if (dto.checkIn) {
-        tx.events.push({
-          rooms: [`availability:${branchId}:${summary.date}`, `branch:${branchId}`],
-          event: 'slot.updated',
-          payload: {
-            branchId,
-            courtId: summary.courtId,
-            date: summary.date,
-            startTime: summary.startTime,
-            endTime: summary.endTime,
-            state: 'IN_USE',
-          },
-        });
-      }
 
       return { booking: summary, receipt };
     });

@@ -88,7 +88,6 @@ export default function StaffOrders() {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [settleTarget, setSettleTarget] = useState<BookingSummaryDto | null>(null);
   const [settleMethod, setSettleMethod] = useState<PaymentMethod>('CASH');
-  const [settleCheckIn, setSettleCheckIn] = useState(true);
   const [settleQr, setSettleQr] = useState<PaymentRequestDto | null>(null);
   const [settleBusy, setSettleBusy] = useState(false);
 
@@ -161,13 +160,6 @@ export default function StaffOrders() {
 
     if (detail.remainingAmount === 0) {
       const finalizeQrSettle = async () => {
-        if (settleCheckIn && detail.allowedActions.includes('CHECK_IN')) {
-          try {
-            await checkInPosBookingApi(detail.bookingCode, { version: detail.version });
-          } catch {
-            // Ignore auto check-in failure if outside check-in window; payment itself succeeded
-          }
-        }
         await invalidateAll();
         toast(`Đã tất toán VietQR thành công cho đơn #${detail.bookingCode}.`, 'ok');
         setSettleTarget(null);
@@ -175,7 +167,7 @@ export default function StaffOrders() {
       };
       void finalizeQrSettle();
     }
-  }, [settleDetailQ.data, settleTarget, settleMethod, settleCheckIn, toast]);
+  }, [settleDetailQ.data, settleTarget, settleMethod, toast]);
 
   const activeBranchName =
     branches.find((b) => b.branchId === activeBranchId)?.name ?? 'Chi nhánh hiện tại';
@@ -200,7 +192,6 @@ export default function StaffOrders() {
   const openSettleModal = (b: BookingSummaryDto) => {
     setSettleTarget(b);
     setSettleMethod('CASH');
-    setSettleCheckIn(true);
     setSettleQr(null);
   };
 
@@ -233,18 +224,12 @@ export default function StaffOrders() {
         {
           method: 'CASH',
           amount: settleTarget.remainingAmount,
-          checkIn: settleCheckIn,
           version: settleTarget.version,
         },
         crypto.randomUUID(),
       );
       await invalidateAll();
-      toast(
-        settleCheckIn && res.booking.status === 'IN_USE'
-          ? `Đã thu đủ ${vnd(res.receipt.amount)} & bàn giao sân cho đơn #${res.booking.bookingCode}.`
-          : `Đã thu đủ ${vnd(res.receipt.amount)} cho đơn #${res.booking.bookingCode}.`,
-        'ok',
-      );
+      toast(`Đã thu đủ ${vnd(res.receipt.amount)} cho đơn #${res.booking.bookingCode}.`, 'ok');
       setSettleTarget(null);
       setSettleQr(null);
     } catch (err) {
@@ -260,15 +245,6 @@ export default function StaffOrders() {
     try {
       const res = await recheckPaymentRequestApi(settleQr.requestId);
       if (res.status === 'PAID' || res.booking?.remainingAmount === 0) {
-        if (settleCheckIn && res.booking && res.booking.status === 'CONFIRMED') {
-          try {
-            await checkInPosBookingApi(settleTarget.bookingCode, {
-              version: res.booking.version,
-            });
-          } catch {
-            // Outside check-in window; staff can check in manually later
-          }
-        }
         await invalidateAll();
         toast(`Đã xác nhận tất toán VietQR cho đơn #${settleTarget.bookingCode}.`, 'ok');
         setSettleTarget(null);
@@ -604,7 +580,7 @@ export default function StaffOrders() {
                                   disabled={isRowBusy}
                                   onClick={() => openSettleModal(b)}
                                 >
-                                  Thu nốt {kfmt(b.remainingAmount)} & Nhận sân
+                                  Thu nốt {kfmt(b.remainingAmount)}
                                 </button>
                               )}
                               {b.allowedActions.includes('CHECK_IN') && (
@@ -748,18 +724,6 @@ export default function StaffOrders() {
                 <b className="t14 c-rose">{vnd(settleTarget.remainingAmount)}</b>
               </div>
             </div>
-
-            <label
-              className="row g8 hint"
-              style={{ padding: 10, cursor: 'pointer', background: 'var(--s50)' }}
-            >
-              <input
-                type="checkbox"
-                checked={settleCheckIn}
-                onChange={(e) => setSettleCheckIn(e.target.checked)}
-              />
-              <span className="t12 w700 c-ink">Nhận sân (bàn giao sân) ngay sau khi thu đủ tiền</span>
-            </label>
 
             <div className="col g8">
               <label className="label" style={{ margin: 0 }}>Hình thức thu phần còn lại</label>

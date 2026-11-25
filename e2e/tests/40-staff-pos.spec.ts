@@ -119,7 +119,7 @@ test.describe('40. Nhân viên POS & Vận hành (POS-01..12)', () => {
     await expect(staffPage.getByTestId('pos-qr-image')).toBeHidden();
   });
 
-  test('POS-03 @p0 @jobs Tất toán → Nhận sân → Kết thúc & Hoàn thành (dùng shiftBooking)', async ({
+  test('POS-03 @p0 @jobs Tất toán → (đơn vẫn Đã xác nhận) → Nhận sân → Kết thúc & Hoàn thành (dùng shiftBooking)', async ({
     staffPage,
   }) => {
     const cus = await apiLogin('customer');
@@ -150,7 +150,7 @@ test.describe('40. Nhân viên POS & Vận hành (POS-01..12)', () => {
     const row = staffPage.locator('table.tbl tbody tr', { hasText: `#${booking.bookingCode}` });
     await expect(row).toBeVisible();
 
-    await row.getByRole('button', { name: /Thu nốt .* & Nhận sân/ }).click();
+    await row.getByRole('button', { name: /Thu nốt / }).click();
     const modal = staffPage.getByTestId('settle-modal');
     await expect(modal).toBeVisible();
     await expect(modal).toContainText(formatVndPlain(booking.remainingAmount));
@@ -158,7 +158,10 @@ test.describe('40. Nhân viên POS & Vận hành (POS-01..12)', () => {
     await modal.getByRole('button', { name: /Đã thu đủ/ }).click();
     await expect(modal).toBeHidden();
 
-    // Sau tất toán + check-in → Đang sử dụng
+    // R-16: tất toán chỉ thu tiền → đơn vẫn Đã xác nhận (PAID); nhân viên bấm "Nhận sân ngay" mới sang Đang sử dụng
+    await expect(row).toContainText('Đã xác nhận');
+    await expect(row).not.toContainText('Đang sử dụng');
+    await row.getByRole('button', { name: 'Nhận sân ngay' }).click();
     await expect(row).toContainText('Đang sử dụng');
     await row.getByRole('button', { name: /Kết thúc & Hoàn thành/ }).click();
     await expect(row).toContainText('Hoàn thành');
@@ -208,7 +211,7 @@ test.describe('40. Nhân viên POS & Vận hành (POS-01..12)', () => {
     const row = staffPage.locator('table.tbl tbody tr', { hasText: `#${booking.bookingCode}` });
     await expect(row).toBeVisible();
     await expect(row.getByRole('button', { name: 'Nhận sân ngay' })).toHaveCount(0);
-    await row.getByRole('button', { name: /Thu nốt .* & Nhận sân/ }).click();
+    await row.getByRole('button', { name: /Thu nốt / }).click();
     await expect(staffPage.getByTestId('settle-modal')).toBeVisible();
 
     // Dọn đơn này để không ảnh hưởng POS-05/07 nếu cùng ngày

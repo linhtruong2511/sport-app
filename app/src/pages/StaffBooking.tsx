@@ -514,13 +514,13 @@ export default function StaffBooking() {
   const courts = schedule?.courts ?? [];
   const slots = schedule?.slots ?? [];
 
-  const renderCell = (court: PosScheduleCourt, cellIdx: number) => {
+  const renderCell = (court: PosScheduleCourt, cellIdx: number, span: number) => {
     const cell = court.cells[cellIdx];
-    if (!cell) return <td key={cellIdx} className="closed">—</td>;
+    if (!cell) return <td key={cellIdx} colSpan={span} className="closed">—</td>;
 
     if (cell.state === 'LOCKED') {
       return (
-        <td key={cellIdx} className="locked" title={cell.reason || 'Bảo trì'}>
+        <td key={cellIdx} colSpan={span} className="locked" title={cell.reason || 'Bảo trì'}>
           🔒 {cell.blockType === 'DECOMMISSION' ? 'Ngừng' : 'Bảo trì'}
         </td>
       );
@@ -528,7 +528,7 @@ export default function StaffBooking() {
 
     if (cell.state === 'PAST') {
       return (
-        <td key={cellIdx}>
+        <td key={cellIdx} colSpan={span}>
           <div className="cell" style={{ opacity: 0.5, cursor: 'not-allowed', background: 'var(--s100)' }}>
             Đã qua
           </div>
@@ -538,7 +538,7 @@ export default function StaffBooking() {
 
     if (cell.state === 'IN_USE') {
       return (
-        <td key={cellIdx}>
+        <td key={cellIdx} colSpan={span}>
           <div className="cell play">
             Đang chơi
             <small>{cell.booking ? `#${cell.booking.bookingCode}` : ''}</small>
@@ -549,7 +549,7 @@ export default function StaffBooking() {
 
     if (cell.state === 'PENDING_PAYMENT') {
       return (
-        <td key={cellIdx}>
+        <td key={cellIdx} colSpan={span}>
           <div className="cell hold">
             Chờ chuyển khoản
             <small>{cell.booking ? `#${cell.booking.bookingCode}` : ''}</small>
@@ -567,7 +567,7 @@ export default function StaffBooking() {
             ? `Đã cọc ${kfmt(bk.paidAmount)}`
             : 'Đã đặt';
       return (
-        <td key={cellIdx}>
+        <td key={cellIdx} colSpan={span}>
           <div className="cell hold">
             {paidText}
             <small>{bk?.isOverdue ? 'Quá giờ nhận sân' : bk ? `#${bk.bookingCode}` : ''}</small>
@@ -578,7 +578,7 @@ export default function StaffBooking() {
 
     const isSelected = sel?.courtId === court.courtId && sel.idxs.includes(cellIdx);
     return (
-      <td key={cellIdx}>
+      <td key={cellIdx} colSpan={span}>
         <button
           type="button"
           className={`cell ${isSelected ? 'sel' : 'free'}`}
@@ -592,6 +592,33 @@ export default function StaffBooking() {
         </button>
       </td>
     );
+  };
+
+  // R-16: mỗi sân có ô riêng theo bộ môn; header là lưới mịn nhất (slotMinutes) nên một ô chiếm nhiều cột.
+  const renderCourtCells = (court: PosScheduleCourt) => {
+    const gridMinutes = schedule?.slotMinutes ?? 0;
+    const toMin = (hhmm: string) => {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    };
+    let usedColumns = 0;
+    const tds = court.cells.map((cell, i) => {
+      const span =
+        gridMinutes > 0
+          ? Math.max(1, Math.round((toMin(cell.end) - toMin(cell.start)) / gridMinutes))
+          : 1;
+      usedColumns += span;
+      return renderCell(court, i, span);
+    });
+    const missing = slots.length - usedColumns;
+    if (missing > 0) {
+      tds.push(
+        <td key="pad" colSpan={missing} className="closed">
+          —
+        </td>,
+      );
+    }
+    return tds;
   };
 
   const qrRemainingMs = pendingOrder
@@ -730,7 +757,7 @@ export default function StaffBooking() {
                                 : c.code}
                             </div>
                           </td>
-                          {slots.map((_, i) => renderCell(c, i))}
+                          {renderCourtCells(c)}
                         </tr>
                       ))
                     )}

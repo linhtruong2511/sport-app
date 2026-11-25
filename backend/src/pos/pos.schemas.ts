@@ -150,7 +150,6 @@ export type PosBookingsListQuery = z.infer<typeof posBookingsListQuerySchema>;
 export const posSettleSchema = z.object({
   method: z.literal('CASH'),
   amount: z.number().int().positive('Số tiền thanh toán phải lớn hơn 0.'),
-  checkIn: z.boolean().default(true),
   version: z.string().min(1, 'Thiếu version của đơn.'),
 });
 

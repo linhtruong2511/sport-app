@@ -2753,7 +2753,7 @@ Route frontend: `/staff/booking`. UC 010, 011, 012, 008. Màn của Nhân viên/
 | Quyền | STAFF+ |
 | Use case | UC 010 |
 | Mô tả | “Bảng lịch sân trực tiếp” của nhân viên. Khác API công khai ở chỗ ô đã đặt có mã đơn, tình trạng tiền (Chờ chuyển khoản / Đã thu 100% / Đã cọc …k), khách đang chơi, khách lẻ/hội viên và cờ quá giờ nhận sân. |
-| Ghi chú | Trạng thái ô: FREE, PENDING_PAYMENT, BOOKED, IN_USE, LOCKED. Dữ liệu được làm mới theo sự kiện `slot.updated` của phòng branch:{branchId}. |
+| Ghi chú | Trạng thái ô: FREE, PENDING_PAYMENT, BOOKED, IN_USE, LOCKED. Dữ liệu được làm mới theo sự kiện `slot.updated` của phòng branch:{branchId}. **Bổ sung 25/11/2026 (R-16):** `slots`/`slotMinutes` ở đầu response là lưới thời gian dùng làm header; `cells` của **mỗi sân** được chia theo `DisplayBlockMinutes` của bộ môn sân đó (Pickleball 120', Bóng đá 90'…). Khi lọc một bộ môn, độ rộng ô trùng `slotMinutes`; khi bỏ trống `sportId`, `slotMinutes` là ước chung lớn nhất các độ rộng ô và một ô chiếm `(end − start) / slotMinutes` cột header. Giá của ô tính trên cả khoảng `[start, end)` của ô đó. |
 
 **Tham số:**
 
@@ -3152,8 +3152,8 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
 | **Thao tác trên màn hình** | **API / sự kiện** | **Ghi chú** |
 | --- | --- | --- |
 | Tab trạng thái (kèm số lượng), chọn ngày, ô tìm đơn | API-32 · `GET /pos/bookings` | Mở từ MH.09: ?q={bookingCode} |
-| “Thu nốt …k & Nhận sân” — tiền mặt | API-33 · `POST /pos/bookings/{bookingCode}/settle` |  |
-| “Thu nốt …k & Nhận sân” — VietQR | API-16 · `POST /bookings/{bookingCode}/payment-requests`<br>Socket `booking.paid`<br>API-34 · `POST /pos/bookings/{bookingCode}/check-in` | purpose = REMAINING |
+| “Thu nốt …k” — tiền mặt | API-33 · `POST /pos/bookings/{bookingCode}/settle` |  |
+| “Thu nốt …k” — VietQR | API-16 · `POST /bookings/{bookingCode}/payment-requests`<br>Socket `booking.paid` | purpose = REMAINING; nhận sân là bước riêng (API-34) |
 | “Nhận sân ngay” | API-34 · `POST /pos/bookings/{bookingCode}/check-in` |  |
 | “✓ Kết thúc & Hoàn thành” | API-35 · `POST /pos/bookings/{bookingCode}/complete` |  |
 | Khung hủy đơn: chọn phân loại, lý do, xem tiền hoàn | API-20 · `GET /bookings/{bookingCode}/cancel-preview` | cancelType = CUSTOMER_REQUEST \| NO_SHOW |
@@ -3240,7 +3240,7 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
 | --- | --- |
 | Quyền | STAFF+ |
 | Use case | UC 013 |
-| Mô tả | Khung “Khách đến nhận sân – Thu tất toán”, nút “Thu nốt …k & Nhận sân” với hình thức tiền mặt. Thu phần còn lại và bàn giao sân trong cùng giao tác. Với VietQR: frontend gọi API Tạo mã QR (purpose REMAINING), chờ sự kiện `booking.paid` rồi gọi API Nhận sân. |
+| Mô tả | Khung “Khách đến nhận sân – Thu tất toán”, nút “Thu nốt …k” với hình thức tiền mặt. **Chỉ thu phần còn lại (R-16, bổ sung 25/11/2026)**: đơn vẫn `CONFIRMED`, `PaymentStatus = PAID`, không tự chuyển `IN_USE`; nhận sân là bước riêng (API-34). Với VietQR: frontend gọi API Tạo mã QR (purpose REMAINING) và chờ sự kiện `booking.paid`. |
 | Header | `Idempotency-Key: <uuid>` (bắt buộc) |
 
 **Request body:**
@@ -3249,13 +3249,12 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
 | --- | --- | --- | --- |
 | method | enum | Có | CASH |
 | amount | number | Có | = RemainingAmount |
-| checkIn | boolean | Không | Mặc định true — chuyển IN_USE ngay sau khi thu |
 | version | string | Có |  |
 
 **Ví dụ request:**
 
 ```json
-{"method": "CASH", "amount": 315000, "checkIn": true, "version": "AAAAAAAAB9E="}
+{"method": "CASH", "amount": 315000, "version": "AAAAAAAAB9E="}
 ```
 
 **Response 200:**
@@ -3266,7 +3265,7 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
     "booking": {
       "bookingCode": "BK2026111001",
       "channel": "ONLINE",
-      "status": "IN_USE",
+      "status": "CONFIRMED",
       "paymentStatus": "PAID",
       "isOverdue": false,
       "branchName": "Cơ sở 1 - Cầu Giấy",
@@ -3283,7 +3282,7 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
       "remainingAmount": 0,
       "holdExpireAt": null,
       "cancel": null,
-      "allowedActions": ["COMPLETE"],
+      "allowedActions": ["CHECK_IN"],
       "version": "AAAAAAAAB9E="
     },
     "receipt": {
@@ -3302,14 +3301,12 @@ Route frontend: `/staff/orders`. UC 013, 014, 009 và tab “Đơn bị ảnh h�
 **Xử lý phía server:**
 
 - Điều kiện: CONFIRMED, RemainingAmount > 0, ngày chơi là hôm nay.
-- Kiểm tra sân không có đơn IN_USE khác TRƯỚC khi thu tiền, tránh thu xong mới báo không nhận được sân.
-- INSERT Payments (Purpose = REMAINING, CASH, COUNTER); PaymentStatus = PAID; nếu checkIn: Status = IN_USE, CheckedInAt = now.
+- INSERT Payments (Purpose = REMAINING, CASH, COUNTER); PaymentStatus = PAID; Status giữ nguyên CONFIRMED, CheckedInAt giữ NULL (R-16). Không kiểm tra COURT_IN_USE hay cửa sổ nhận sân sớm ở API này — các kiểm tra đó thuộc API-34.
 
 **Lỗi nghiệp vụ:**
 
 | **HTTP** | **Mã lỗi** | **Điều kiện / thông báo** |
 | --- | --- | --- |
-| 409 | COURT_IN_USE | “Sân đang được sử dụng bởi đơn trước (#BK…). Vui lòng chờ khách trước trả sân.” — `details.blockingBookingCode` |
 | 422 | NOTHING_TO_PAY | Đơn đã thanh toán đủ — dùng API Nhận sân |
 | 422 | AMOUNT_MISMATCH |  |
 | 409 | BOOKING_STATE_CHANGED |  |

@@ -101,7 +101,7 @@ Chốt trước: **Q-01** (data access), **Q-13** (stack: `backend/` đang dùng
 | API-30 `POST /pos/bookings/:bookingCode/abort` | [x] Xong (25/11/2026) | `COUNTER_ABORT`, trả slot & `UsedCount` |
 | API-31 `GET /pos/receipts/latest` | [x] Xong (25/11/2026) | Phiếu thu gần nhất tại quầy |
 | API-32 `GET /pos/bookings` | [x] Xong (25/11/2026) | `tabCounts` + `AFFECTED` |
-| API-33 `POST /pos/bookings/:bookingCode/settle` | [x] Xong (25/11/2026) | Idempotency-Key, `COURT_IN_USE` kiểm trước thu tiền |
+| API-33 `POST /pos/bookings/:bookingCode/settle` | [x] Xong (25/11/2026) | Idempotency-Key; chỉ thu tiền, đơn giữ `CONFIRMED` (R-16) |
 | API-34 `POST /pos/bookings/:bookingCode/check-in` | [x] Xong (25/11/2026) | `PAYMENT_INCOMPLETE`, Q-15 `-15'`, `COURT_IN_USE` |
 | API-35 `POST /pos/bookings/:bookingCode/complete` | [x] Xong (25/11/2026) | Kết thúc sớm & mở slot tương lai |
 | API-36 `GET /affected-bookings` | [x] Xong (25/11/2026) | Tính trực tiếp 4 lý do |

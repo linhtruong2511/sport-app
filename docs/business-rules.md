@@ -52,7 +52,7 @@ UC 021), `COUNTER_ABORT` (hủy tạo đơn tại quầy khi khách bỏ đi, ch
 | `PENDING_PAYMENT` → `CONFIRMED` | Webhook / recheck / NV thu tiền mặt / đối soát khớp tay | Số tiền = `AmountDueNow`, `now ≤ HoldExpireAt` | `Payments`; `PaymentStatus` = DEPOSITED (đặt cọc) hoặc PAID; `HoldExpireAt = NULL`; QR → PAID; thông báo PAYMENT_RESULT |
 | `PENDING_PAYMENT` → `EXPIRED` | Job `expireHolds` | `now > HoldExpireAt` | Slots IsActive=0; `UsedCount − 1`; QR PENDING → EXPIRED; socket `slot.updated` |
 | `PENDING_PAYMENT` → `CANCELED` | KH/NV (`CUSTOMER_REQUEST`); NV (`COUNTER_ABORT`, chỉ đơn COUNTER, `PaidAmount = 0`) | — | Slots IsActive=0; `UsedCount − 1`; QR → CANCELED; `RefundRate = NULL` |
-| `CONFIRMED`(DEPOSITED) → `CONFIRMED`(PAID) | NV tất toán; webhook QR phần còn lại | Số tiền = `RemainingAmount` | `Payments` Purpose=REMAINING |
+| `CONFIRMED`(DEPOSITED) → `CONFIRMED`(PAID) | NV tất toán (tiền mặt, API-33); webhook QR phần còn lại | Số tiền = `RemainingAmount`; ngày chơi là hôm nay (tiền mặt) | `Payments` Purpose=REMAINING. **Chỉ thu tiền, đơn vẫn `CONFIRMED`, không tự sang `IN_USE`** (R-16) |
 | `CONFIRMED` → `IN_USE` | NV "Nhận sân" | `RemainingAmount = 0`; ngày chơi là hôm nay; sân không có đơn `IN_USE` khác | `CheckedInAt = now` |
 | `IN_USE` → `COMPLETED` | Job `autoComplete` (`now ≥ EndAt`) hoặc NV "Kết thúc sớm" | — | `CheckedOutAt = now`; socket mở lại ô còn lại |
 | `CONFIRMED` → `CANCELED` (`CUSTOMER_REQUEST`) | KH (đơn mình), NV, OWNER | `now < StartAt` | Mục 8 |
@@ -342,7 +342,8 @@ Mỗi ca dưới đây phải có test tự động (unit cho hàm thuần, inte
 - [x] Khách hủy sau StartAt → BOOKING_NOT_CANCELABLE (`bookings.int.test.ts`).
 
 **Nhận sân**
-- [x] Nhận sân khi DEPOSITED → PAYMENT_INCOMPLETE. Sân còn đơn IN_USE → COURT_IN_USE (kiểm tra **trước** khi thu tiền ở API settle); đọc `CHECKIN_EARLY_MINUTES` từ `SystemSettings` (`pos.int.test.ts`).
+- [x] Nhận sân khi DEPOSITED → PAYMENT_INCOMPLETE. Sân còn đơn IN_USE → COURT_IN_USE (API-34); đọc `CHECKIN_EARLY_MINUTES` từ `SystemSettings` (`pos.int.test.ts`).
+- [x] Tất toán tiền mặt (API-33) chỉ thu tiền: đơn vẫn `CONFIRMED` + `PAID`, `CheckedInAt = NULL`, kể cả khi sân đang có đơn `IN_USE` khác hoặc còn xa giờ chơi (R-16, `pos.int.test.ts`).
 - [x] autoComplete tại EndAt (`jobs.int.test.ts`).
 
 **Phân quyền**

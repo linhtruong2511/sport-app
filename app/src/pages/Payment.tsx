@@ -195,6 +195,9 @@ export default function Payment() {
   }
 
   const hrs = b.durationMinutes / 60;
+  // R-16: đơn đang chờ thanh toán thì remainingAmount còn bằng cả tổng tiền (chưa có khoản nào được ghi nhận);
+  // phần phải trả khi nhận sân = tổng tiền − khoản cần trả ngay. Sau khi thanh toán, dùng remainingAmount từ API.
+  const dueAtCheckIn = isPending ? b.totalAmount - b.amountDueNow : b.remainingAmount;
   const when = b.date === todayVn() ? 'hôm nay' : toVN(b.date);
 
   const holdExpireMs = b.holdExpireAt ? Date.parse(b.holdExpireAt) : 0;
@@ -499,7 +502,7 @@ export default function Payment() {
                       vnd(b.amountDueNow),
                       'c-brand w800',
                     ],
-                    ['Còn lại thanh toán khi nhận sân:', vnd(b.remainingAmount), ''],
+                    ['Còn lại thanh toán khi nhận sân:', vnd(dueAtCheckIn), ''],
                   ] as const
                 ).map(([k, v, cls]) => (
                   <div className="row between g12" style={{ alignItems: 'flex-start' }} key={k}>
@@ -519,7 +522,7 @@ export default function Payment() {
               <b className="t12 c-ink">Quy định nhận sân &amp; hoàn hủy:</b>
               <p className="t12 c-s700">
                 • Vui lòng có mặt tại quầy lễ tân trước giờ chơi 10 phút để thanh toán phần tiền
-                còn thiếu ({vnd(b.remainingAmount)}) và nhận sân.
+                còn thiếu ({vnd(dueAtCheckIn)}) và nhận sân.
               </p>
               <p className="t12 c-s700">
                 • Tiền đặt cọc không được hoàn lại khi hủy lịch hoặc quá giờ không đến nhận sân.

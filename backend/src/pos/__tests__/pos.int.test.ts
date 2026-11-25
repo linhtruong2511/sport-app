@@ -518,6 +518,23 @@ describe('pos integration (API-25..35)', () => {
     expect(freeCell.state).toBe('FREE');
     expect(freeCell.price).toBe(300_000);
 
+    // R-16: bỏ trống sportId (xem tất cả bộ môn) → ô Pickleball vẫn là 120' và giá không bị chia đôi,
+    // dù lưới header mịn hơn (gcd các DisplayBlockMinutes).
+    const allSportsRes = await request(app.getHttpServer())
+      .get(`/api/v1/pos/schedule?date=${playDate}`)
+      .set('Authorization', 'Bearer token-staff-cs01');
+    expect(allSportsRes.status).toBe(200);
+    const allSportsData = allSportsRes.body.data;
+    expect(allSportsData.slotMinutes).toBeLessThan(120);
+    const pb01All = allSportsData.courts.find((c: { courtId: number }) => c.courtId === ids.pb01);
+    const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    for (const cell of pb01All.cells as Array<{ start: string; end: string }>) {
+      expect(toMin(cell.end) - toMin(cell.start)).toBe(120);
+    }
+    const freeCellAll = pb01All.cells.find((c: { start: string }) => c.start === '09:00');
+    expect(freeCellAll.state).toBe('FREE');
+    expect(freeCellAll.price).toBe(300_000);
+
     // Check D+5 maintenance block on SAN_PB_02
     const blockDate = formatDateVn(addDays(new Date(), 5));
     const blockSchedRes = await request(app.getHttpServer())
@@ -678,7 +695,7 @@ describe('pos integration (API-25..35)', () => {
     expect(abortPaidRes.body.error.code).toBe('BOOKING_NOT_CANCELABLE');
   });
 
-  it('API-32, API-33, API-34, API-35: list bookings, settle (COURT_IN_USE checked before cash), check-in (PAYMENT_INCOMPLETE, CHECK_IN_TOO_EARLY), and early complete releasing future slots', async () => {
+  it('API-32, API-33, API-34, API-35: list bookings, settle (chỉ thu tiền, đơn vẫn CONFIRMED), check-in (PAYMENT_INCOMPLETE, CHECK_IN_TOO_EARLY, COURT_IN_USE), and early complete releasing future slots', async () => {
     // Set clock at 08:00 on baseToday
     fakeClock.set(parseVnDateTime(baseToday, '08:00'));
 
@@ -807,38 +824,41 @@ describe('pos integration (API-25..35)', () => {
     expect(incompleteCheckIn.status).toBe(422);
     expect(incompleteCheckIn.body.error.code).toBe('PAYMENT_INCOMPLETE');
 
-    // API-33: Settle Booking B at 11:30 (>15' early) -> 422 CHECK_IN_TOO_EARLY
+    // API-33 / R-16: settle Booking B at 11:30 (còn 30' trước giờ chơi, sân A vẫn IN_USE)
+    // -> 200, chỉ thu tiền: đơn vẫn CONFIRMED + PAID, KHÔNG tự chuyển IN_USE
     fakeClock.set(parseVnDateTime(baseToday, '11:30'));
-    const earlySettle = await request(app.getHttpServer())
+    const settleBRes = await request(app.getHttpServer())
       .post(`/api/v1/pos/bookings/${bookingB.bookingCode}/settle`)
       .set('Authorization', 'Bearer token-staff-cs01')
       .set('Idempotency-Key', uuid())
       .send({
         method: 'CASH',
         amount: 110_000,
-        checkIn: true,
         version: bookingB.version,
       });
-    expect(earlySettle.status).toBe(422);
-    expect(earlySettle.body.error.code).toBe('CHECK_IN_TOO_EARLY');
+    expect(settleBRes.status).toBe(200);
+    bookingB = settleBRes.body.data.booking;
+    const settleReceipt = settleBRes.body.data.receipt;
+    expect(bookingB.status).toBe('CONFIRMED');
+    expect(bookingB.paymentStatus).toBe('PAID');
+    expect(bookingB.paidAmount).toBe(160_000);
+    expect(bookingB.remainingAmount).toBe(0);
+    expect(bookingB.checkedInAt).toBeNull();
+    expect(settleReceipt.purpose).toBe('REMAINING');
+    expect(settleReceipt.method).toBe('CASH');
+    expect(settleReceipt.amount).toBe(110_000);
 
-    // API-33: Settle Booking B at 11:50 while A is STILL IN_USE on cl01 -> 409 COURT_IN_USE BEFORE taking cash!
+    // API-34: Check-in Booking B at 11:50 while A is STILL IN_USE on cl01 -> 409 COURT_IN_USE
     fakeClock.set(parseVnDateTime(baseToday, '11:50'));
-    const courtInUseSettle = await request(app.getHttpServer())
-      .post(`/api/v1/pos/bookings/${bookingB.bookingCode}/settle`)
+    const courtInUseCheckIn = await request(app.getHttpServer())
+      .post(`/api/v1/pos/bookings/${bookingB.bookingCode}/check-in`)
       .set('Authorization', 'Bearer token-staff-cs01')
-      .set('Idempotency-Key', uuid())
-      .send({
-        method: 'CASH',
-        amount: 110_000,
-        checkIn: true,
-        version: bookingB.version,
-      });
-    expect(courtInUseSettle.status).toBe(409);
-    expect(courtInUseSettle.body.error.code).toBe('COURT_IN_USE');
-    expect(courtInUseSettle.body.error.details.blockingBookingCode).toBe(bookingA.bookingCode);
+      .send({ version: bookingB.version });
+    expect(courtInUseCheckIn.status).toBe(409);
+    expect(courtInUseCheckIn.body.error.code).toBe('COURT_IN_USE');
+    expect(courtInUseCheckIn.body.error.details.blockingBookingCode).toBe(bookingA.bookingCode);
 
-    // Verify NO REMAINING payment was recorded for Booking B
+    // Booking B có đúng 2 phiếu thu: DEPOSIT + REMAINING
     const exec = await txService.executor();
     const paymentsForB = await exec
       .request()
@@ -848,10 +868,10 @@ describe('pos integration (API-25..35)', () => {
         FROM dbo.Bookings b
         LEFT JOIN dbo.Payments p ON p.BookingId = b.BookingId
         WHERE b.BookingCode = @code
+        ORDER BY p.PaymentId ASC
       `);
-    expect(paymentsForB.recordset).toHaveLength(1);
-    expect(paymentsForB.recordset[0].Purpose).toBe('DEPOSIT');
-    expect(Number(paymentsForB.recordset[0].PaidAmount)).toBe(50_000);
+    expect(paymentsForB.recordset.map((r) => r.Purpose)).toEqual(['DEPOSIT', 'REMAINING']);
+    expect(Number(paymentsForB.recordset[0].PaidAmount)).toBe(160_000);
 
     // API-35: Complete Booking A early at 11:10 -> COMPLETED, future slots (>= 11:10, i.e. 11:30) deactivated
     fakeClock.set(parseVnDateTime(baseToday, '11:10'));
@@ -886,29 +906,16 @@ describe('pos integration (API-25..35)', () => {
     expect(completeAgain.status).toBe(422);
     expect(completeAgain.body.error.code).toBe('BOOKING_NOT_IN_USE');
 
-    // API-33: Now at 11:50, settle Booking B with checkIn: true -> 200 IN_USE + PAID + REMAINING receipt
+    // API-34: A đã trả sân -> at 11:50 check-in Booking B -> 200 IN_USE
     fakeClock.set(parseVnDateTime(baseToday, '11:50'));
-    const settleBRes = await request(app.getHttpServer())
-      .post(`/api/v1/pos/bookings/${bookingB.bookingCode}/settle`)
+    const checkInBRes = await request(app.getHttpServer())
+      .post(`/api/v1/pos/bookings/${bookingB.bookingCode}/check-in`)
       .set('Authorization', 'Bearer token-staff-cs01')
-      .set('Idempotency-Key', uuid())
-      .send({
-        method: 'CASH',
-        amount: 110_000,
-        checkIn: true,
-        version: bookingB.version,
-      });
-    expect(settleBRes.status).toBe(200);
-    bookingB = settleBRes.body.data.booking;
-    const settleReceipt = settleBRes.body.data.receipt;
+      .send({ version: bookingB.version });
+    expect(checkInBRes.status).toBe(200);
+    bookingB = checkInBRes.body.data.booking;
     expect(bookingB.status).toBe('IN_USE');
-    expect(bookingB.paymentStatus).toBe('PAID');
-    expect(bookingB.paidAmount).toBe(160_000);
-    expect(bookingB.remainingAmount).toBe(0);
     expect(bookingB.allowedActions).toEqual(['COMPLETE']);
-    expect(settleReceipt.purpose).toBe('REMAINING');
-    expect(settleReceipt.method).toBe('CASH');
-    expect(settleReceipt.amount).toBe(110_000);
 
     // Calling settle again on already PAID/IN_USE -> 409 BOOKING_STATE_CHANGED
     const settleAgain = await request(app.getHttpServer())
@@ -918,7 +925,6 @@ describe('pos integration (API-25..35)', () => {
       .send({
         method: 'CASH',
         amount: 110_000,
-        checkIn: true,
         version: bookingB.version,
       });
     expect(settleAgain.status).toBe(409);

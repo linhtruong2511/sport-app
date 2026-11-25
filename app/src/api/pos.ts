@@ -218,7 +218,6 @@ export type PosBookingsListResponse = ApiListSuccess<BookingSummaryDto> & {
 export interface SettlePosBookingInput {
   method: Extract<PaymentMethod, 'CASH'>;
   amount: number;
-  checkIn?: boolean;
   version: string;
 }
 
