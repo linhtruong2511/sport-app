@@ -181,7 +181,9 @@ export default function Login() {
       <header className="hdr">
         <div className="container hdr-in">
           <div className="row g12" style={{ minWidth: 0 }}>
-            <div className="logo-mark">88</div>
+            <div className="logo-mark">
+              <img src="/logo-88-sports-transparent-256x256.png" alt="Logo Thể thao 88" />
+            </div>
             <div className="col g4" style={{ paddingBottom: 2.5, minWidth: 0 }}>
               <span className="logo-name">Thể thao 88</span>
               <span className="logo-sub nowrap">Hệ thống đặt lịch sân thể thao</span>

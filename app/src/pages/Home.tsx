@@ -19,18 +19,57 @@ import {
 
 const PROMO_TONES = ['b-green', 'b-sky', 'b-indigo', 'b-amber'] as const;
 
-const SPORT_FALLBACK_ICONS: Record<string, string> = {
-  PICKLEBALL: '🏓',
-  BADMINTON: '🏸',
+const SPORT_EMOJI_MAP: Record<string, string> = {
   FOOTBALL: '⚽',
+  'sport-football': '⚽',
+  BADMINTON: '🏸',
+  'sport-badminton': '🏸',
   TENNIS: '🎾',
+  'sport-tennis': '🎾',
+  BASKETBALL: '🏀',
+  'sport-basketball': '🏀',
+  PICKLEBALL: '🏓',
+  'sport-pickleball': '🏓',
+};
+
+const SPORT_IMAGE_MAP: Record<string, string> = {
+  FOOTBALL: '/images/court-football.jpg',
+  'sport-football': '/images/court-football.jpg',
+  BADMINTON: '/images/court-badminton.jpg',
+  'sport-badminton': '/images/court-badminton.jpg',
+  TENNIS: '/images/court-tennis.jpg',
+  'sport-tennis': '/images/court-tennis.jpg',
+  BASKETBALL: '/images/court-basketball.jpg',
+  'sport-basketball': '/images/court-basketball.jpg',
+  PICKLEBALL: '/images/court-pickleball.jpg',
+  'sport-pickleball': '/images/court-pickleball.jpg',
 };
 
 function sportIconOf(sport: SportListItem): string {
-  if (sport.icon && sport.icon.trim()) {
-    return sport.icon;
+  const iconKey = sport.icon?.trim() ?? '';
+  if (iconKey && SPORT_EMOJI_MAP[iconKey]) {
+    return SPORT_EMOJI_MAP[iconKey];
   }
-  return SPORT_FALLBACK_ICONS[sport.code.toUpperCase()] ?? '🏟️';
+  const codeKey = sport.code.toUpperCase();
+  if (SPORT_EMOJI_MAP[codeKey]) {
+    return SPORT_EMOJI_MAP[codeKey];
+  }
+  if (iconKey && !iconKey.startsWith('sport-')) {
+    return iconKey;
+  }
+  return '🏟️';
+}
+
+function sportImageOf(code?: string, icon?: string | null): string {
+  const iconKey = icon?.trim() ?? '';
+  if (iconKey && SPORT_IMAGE_MAP[iconKey]) {
+    return SPORT_IMAGE_MAP[iconKey];
+  }
+  const codeKey = code?.toUpperCase() ?? '';
+  if (codeKey && SPORT_IMAGE_MAP[codeKey]) {
+    return SPORT_IMAGE_MAP[codeKey];
+  }
+  return '/images/hero-courts.jpg';
 }
 
 function getHolidayText(holiday: BranchSportHoliday | null | undefined): string | null {
@@ -184,6 +223,49 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Không gian sân theo bộ môn */}
+      {sports.length > 0 && (
+        <section className="col g12">
+          <div className="row between wrap g8">
+            <div className="col g2">
+              <h2 className="t18 w800 c-ink">Không gian sân tiêu chuẩn thi đấu</h2>
+              <p className="t12 c-s600">
+                Chọn nhanh bộ môn để xem bảng lịch trống trực tiếp theo từng khung giờ.
+              </p>
+            </div>
+          </div>
+          <div className="sport-showcase-grid">
+            {sports.map((s) => (
+              <button
+                type="button"
+                key={s.sportId}
+                className="sport-showcase-card"
+                onClick={() => {
+                  const query: Record<string, string> = {
+                    sportId: String(s.sportId),
+                    date: date || today,
+                  };
+                  if (effectiveBranchId) query.branchId = String(effectiveBranchId);
+                  go(query);
+                }}
+              >
+                <img
+                  src={sportImageOf(s.code, s.icon)}
+                  alt={`Sân ${s.name}`}
+                  loading="lazy"
+                />
+                <div className="sport-showcase-overlay">
+                  <span className="sport-showcase-name">
+                    {sportIconOf(s)} {s.name}
+                  </span>
+                  <span className="sport-showcase-meta">{s.activeCourtCount} sân đang hoạt động</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Khuyến mãi */}
       <section className="col g12">
         <div className="row between wrap g8">
@@ -306,23 +388,30 @@ export default function Home() {
 
                 return (
                   <div key={sp.sportId} className="cluster">
-                    <div className="cluster-body">
-                      <div className="row between wrap g8">
+                    <div className="cluster-media">
+                      <img
+                        src={sportImageOf(sp.code)}
+                        alt={`Cụm sân ${sp.name}`}
+                        loading="lazy"
+                      />
+                      <div className="cluster-media-scrim">
                         <span
                           className="badge sq b-green"
-                          style={{ padding: '2px 10px', fontSize: 11 }}
+                          style={{ padding: '3px 10px', fontSize: 11, boxShadow: 'var(--shadow-sm)' }}
                         >
                           {summary.branch.name}
                         </span>
                         <span
                           className={`badge ${free > 0 ? 'b-green-flat' : 'b-gray-o'}`}
-                          style={{ padding: '2px 10px', fontSize: 11 }}
+                          style={{ padding: '3px 10px', fontSize: 11, boxShadow: 'var(--shadow-sm)' }}
                         >
                           {free > 0
                             ? `● Còn ${free} khung giờ trống`
                             : '● Hết khung giờ trống'}
                         </span>
                       </div>
+                    </div>
+                    <div className="cluster-body">
                       <h3 className="t16 w800 c-ink">
                         Cụm sân {sp.name} ({sp.courtCount} sân)
                       </h3>
