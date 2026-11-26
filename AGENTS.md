@@ -1,4 +1,4 @@
-# SportHub — Hệ thống quản lý & đặt lịch sân thể thao
+# Thể thao 88 — Hệ thống quản lý & đặt lịch sân thể thao
 
 Hệ thống đặt sân **nhiều cơ sở** cho 3 vai trò:
 - **Khách hàng (CUSTOMER)**: tìm sân, đặt online, trả bằng VietQR, xem/hủy đơn của mình, nhận thông báo.

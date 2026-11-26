@@ -3,7 +3,7 @@ description: Triển khai một API theo mã trong SDD (vd. /implement-api API-1
 argument-hint: API-xx
 ---
 
-Triển khai **$ARGUMENTS** cho SportHub. Làm đúng thứ tự, không bỏ bước:
+Triển khai **$ARGUMENTS** cho Thể thao 88. Làm đúng thứ tự, không bỏ bước:
 
 1. **Đọc đặc tả**: tìm `$ARGUMENTS` trong `docs/SDD.md` mục 5.5 (endpoint, quyền, request, response, xử lý phía
    server, lỗi nghiệp vụ). Đọc use case liên quan trong `docs/SRS.md`. Đọc `docs/decisions.md` và các mục liên quan

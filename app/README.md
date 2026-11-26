@@ -1,4 +1,4 @@
-# SportHub – Hệ thống đặt lịch sân thể thao (React)
+# Thể thao 88 – Hệ thống đặt lịch sân thể thao (React)
 
 Triển khai 12 màn hình từ Figma `Sports` + thành phần bổ sung SRS (Vite + React 19 + TypeScript + react-router, CSS thuần theo token Figma trong `src/index.css`).
 

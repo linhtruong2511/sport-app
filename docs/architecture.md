@@ -1,4 +1,4 @@
-# Kiến trúc SportHub (tóm tắt SDD 2 + ràng buộc triển khai)
+# Kiến trúc Thể thao 88 (tóm tắt SDD 2 + ràng buộc triển khai)
 
 ## 1. Tổng thể
 

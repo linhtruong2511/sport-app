@@ -1,6 +1,6 @@
-# SportHub — Hệ thống Quản lý & Đặt lịch Sân Thể thao
+# Thể thao 88 — Hệ thống Quản lý & Đặt lịch Sân Thể thao
 
-**SportHub** là nền tảng quản lý và đặt lịch sân thể thao **đa cơ sở**, hỗ trợ đặt sân trực tuyến kèm thanh toán VietQR tự động, nghiệp vụ POS tại quầy, đối soát chuyển khoản và quản trị chuỗi sân tập trung.
+**Thể thao 88** là nền tảng quản lý và đặt lịch sân thể thao **đa cơ sở**, hỗ trợ đặt sân trực tuyến kèm thanh toán VietQR tự động, nghiệp vụ POS tại quầy, đối soát chuyển khoản và quản trị chuỗi sân tập trung.
 
 ---
 

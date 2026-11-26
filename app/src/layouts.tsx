@@ -102,9 +102,9 @@ export function CustomerLayout() {
         <div className="container hdr-in">
           <div className="hdr-left">
             <Link to="/" className="row g10" style={{ minWidth: 0 }}>
-              <div className="logo-mark">S</div>
+              <div className="logo-mark">88</div>
               <div className="col g4" style={{ paddingBottom: 2, minWidth: 0 }}>
-                <span className="logo-name">SportHub</span>
+                <span className="logo-name">Thể thao 88</span>
                 <span className="logo-sub nowrap">Đặt sân thể thao trực tuyến</span>
               </div>
             </Link>
@@ -400,10 +400,10 @@ export function StaffLayout() {
     <div className="staff-shell">
       <aside className="sidebar">
         <div className="side-logo">
-          <div className="mk">S</div>
+          <div className="mk">88</div>
           <div className="col g4" style={{ paddingBottom: 1.5 }}>
             <span className="t16 w800 c-white" style={{ lineHeight: '16px', letterSpacing: -0.4 }}>
-              SportHub POS
+              Thể thao 88 POS
             </span>
             <span className="t11 w500" style={{ color: 'var(--s400)' }}>
               Quản lý & Vận hành sân

@@ -29,7 +29,7 @@ test.describe('01. E2E Auth, Register & RBAC (Real Backend + SportHub_Test)', ()
     customerPage,
   }) => {
     await customerPage.goto('/');
-    await expect(customerPage.locator('.logo-name')).toHaveText('SportHub');
+    await expect(customerPage.locator('.logo-name')).toHaveText('Thể thao 88');
     await expect(customerPage.getByRole('link', { name: 'Đặt sân trực tuyến' })).toBeVisible();
     await expect(customerPage.getByRole('link', { name: 'Lịch đặt của tôi' })).toBeVisible();
 

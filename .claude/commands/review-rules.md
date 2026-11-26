@@ -1,5 +1,5 @@
 ---
-description: Rà soát thay đổi hiện tại theo các bất biến nghiệp vụ SportHub
+description: Rà soát thay đổi hiện tại theo các bất biến nghiệp vụ Thể thao 88
 ---
 
 Rà soát thay đổi chưa commit (`git diff` và `git diff --staged`; nếu sạch thì so với nhánh chính) theo `CLAUDE.md`

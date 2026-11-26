@@ -1,4 +1,4 @@
-# backend — Backend SportHub (NestJS 12 + TypeScript + SQL Server)
+# backend — Backend Thể thao 88 (NestJS 12 + TypeScript + SQL Server)
 
 Kế thừa quy tắc từ `AGENTS.md` ở thư mục gốc. Đọc kèm: `backend/README.md`, `docs/architecture.md`, `docs/business-rules.md`, `docs/api-conventions.md`, `docs/database.md`.
 

@@ -364,7 +364,7 @@ export default function Home() {
         <aside className="span4 col g16">
           <div className="card col g12">
             <div className="row between wrap g8">
-              <h3 className="t14 w800 c-ink">Hệ thống chi nhánh SportHub</h3>
+              <h3 className="t14 w800 c-ink">Hệ thống chi nhánh Thể thao 88</h3>
               <span className="t11 w700 c-brand">Đang hoạt động</span>
             </div>
             {branchesQ.isLoading && (

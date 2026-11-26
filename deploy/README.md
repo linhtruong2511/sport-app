@@ -1,6 +1,6 @@
-# SportHub Production Deployment Runbook
+# Thể thao 88 Production Deployment Runbook
 
-Tài liệu hướng dẫn triển khai và vận hành SportHub trên môi trường production (Linux Ubuntu/Docker, Nginx, Node.js LTS + PM2, SQL Server 2016 SP1+ với `DB_AUTH_TYPE=sql`, backup qua `sqlcmd` bash script). Script PowerShell giữ lại cho môi trường Windows dev.
+Tài liệu hướng dẫn triển khai và vận hành Thể thao 88 trên môi trường production (Linux Ubuntu/Docker, Nginx, Node.js LTS + PM2, SQL Server 2016 SP1+ với `DB_AUTH_TYPE=sql`, backup qua `sqlcmd` bash script). Script PowerShell giữ lại cho môi trường Windows dev.
 
 ## 1. Chuẩn bị biến môi trường
 

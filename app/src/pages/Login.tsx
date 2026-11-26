@@ -165,7 +165,7 @@ export default function Login() {
         password: reg.password,
         confirmPassword: reg.confirmPassword,
       });
-      toast('Đăng ký tài khoản thành công. Chào mừng bạn đến với SportHub!', 'ok');
+      toast('Đăng ký tài khoản thành công. Chào mừng bạn đến với Thể thao 88!', 'ok');
       nav('/booking', { replace: true });
     } catch (error) {
       const apiFieldErrs = extractFieldErrors(error);
@@ -181,9 +181,9 @@ export default function Login() {
       <header className="hdr">
         <div className="container hdr-in">
           <div className="row g12" style={{ minWidth: 0 }}>
-            <div className="logo-mark">S</div>
+            <div className="logo-mark">88</div>
             <div className="col g4" style={{ paddingBottom: 2.5, minWidth: 0 }}>
-              <span className="logo-name">SportHub</span>
+              <span className="logo-name">Thể thao 88</span>
               <span className="logo-sub nowrap">Hệ thống đặt lịch sân thể thao</span>
             </div>
           </div>
@@ -221,10 +221,10 @@ export default function Login() {
                 ⚽ Đặt sân nhanh chóng • Giữ lịch tức thì
               </span>
               <h1 className="t24 w800" style={{ lineHeight: '33px', paddingTop: 1 }}>
-                Đặt lịch sân thể thao mọi lúc, mọi nơi cùng SportHub
+                Đặt lịch sân thể thao mọi lúc, mọi nơi cùng Thể thao 88
               </h1>
               <p className="t14" style={{ color: 'var(--brand-100)', lineHeight: '22.75px' }}>
-                Tra cứu khung giờ trống theo thời gian thực tại hệ thống chi nhánh SportHub, thanh
+                Tra cứu khung giờ trống theo thời gian thực tại hệ thống chi nhánh Thể thao 88, thanh
                 toán đặt cọc qua mã QR tiện lợi và nhận thông báo nhắc lịch tự động trước giờ bóng
                 lăn 1 tiếng.
               </p>
@@ -368,7 +368,7 @@ export default function Login() {
                 onSubmit={(e) => void submitRegister(e)}
               >
                 <div className="col g2">
-                  <h2 className="t18 w800 c-ink">Trở thành hội viên SportHub</h2>
+                  <h2 className="t18 w800 c-ink">Trở thành hội viên Thể thao 88</h2>
                   <p className="t12 c-s600">
                     Đăng ký miễn phí để đặt sân nhanh, nhận ưu đãi giờ vàng và theo dõi lịch đặt
                     của bạn.

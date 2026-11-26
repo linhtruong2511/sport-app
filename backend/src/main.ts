@@ -22,7 +22,7 @@ async function bootstrap() {
   }
   if (process.env.TZ !== 'Asia/Ho_Chi_Minh') {
     throw new Error(
-      `Invalid TZ="${process.env.TZ}". SportHub requires TZ=Asia/Ho_Chi_Minh for Vietnam wall-clock alignment.`,
+      `Invalid TZ="${process.env.TZ}". Thể thao 88 requires TZ=Asia/Ho_Chi_Minh for Vietnam wall-clock alignment.`,
     );
   }
 
@@ -82,7 +82,7 @@ async function bootstrap() {
   }
 
   await app.listen(env.port);
-  logger.info('SportHub backend listening', {
+  logger.info('Thể thao 88 backend listening', {
     context: 'Bootstrap',
     port: env.port,
   });

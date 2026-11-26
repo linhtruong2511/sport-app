@@ -31,7 +31,7 @@ Phạm vi thiết kế bám theo 19 yêu cầu chức năng và 24 use case tron
 | VietQR | Chuẩn mã QR chuyển khoản liên ngân hàng (EMVCo) của NAPAS, chứa sẵn số tài khoản, số tiền và nội dung. |
 | RBAC | Role-Based Access Control – phân quyền theo vai trò. |
 | JWT | JSON Web Token – token truy cập không trạng thái. |
-| POS | Point of Sale – giao diện vận hành tại quầy (SportHub POS). |
+| POS | Point of Sale – giao diện vận hành tại quầy (Thể thao 88 POS). |
 
 # 2. Thiết kế kiến trúc
 

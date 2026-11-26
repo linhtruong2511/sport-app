@@ -1,6 +1,6 @@
 # BÁO CÁO RÀ SOÁT GIAO DIỆN PROTOTYPE SO VỚI SRS & THIẾT KẾ CHI TIẾT
 
-- **Dự án:** Hệ thống Quản lý và Đặt lịch Sân thể thao (**SportHub**)
+- **Dự án:** Hệ thống Quản lý và Đặt lịch Sân thể thao (**Thể thao 88**)
 - **Phạm vi rà soát:** **Chỉ rà soát phần giao diện Prototype (`app/`)** tại thời điểm trước khi triển khai `docs/03-ke-hoach-sua-doi-trien-khai.md` — chưa tính Backend API và CSDL SQL Server (dữ liệu mô phỏng trong `app/src/data.ts`, `app/src/store.tsx`).
 - **Tiêu chí đánh giá:** Giao diện prototype phải **thể hiện và vận hành đầy đủ toàn bộ các nghiệp vụ, màn hình, trường nhập, ràng buộc kiểm tra, luồng trạng thái và báo cáo** đã nêu trong tài liệu SRS.
 - **Tài liệu đối chiếu:**

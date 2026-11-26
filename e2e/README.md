@@ -1,4 +1,4 @@
-# SportHub — Bộ Kiểm thử E2E bằng Playwright
+# Thể thao 88 — Bộ Kiểm thử E2E bằng Playwright
 
 Bộ kiểm thử E2E chạy **Full-stack thật** (React SPA `app/` + NestJS Backend `backend/` + SQL Server `SportHub_Test`), tự động reset DB mẫu qua `fixtures/global-setup.ts` trước khi chạy.
 

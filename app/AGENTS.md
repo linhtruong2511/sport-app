@@ -1,4 +1,4 @@
-# app — React SPA SportHub
+# app — React SPA Thể thao 88
 
 Kế thừa quy tắc từ `AGENTS.md` ở thư mục gốc. Đọc kèm: `docs/api-conventions.md` (envelope, lỗi, allowedActions), `docs/business-rules.md` (để hiểu, **không** để tính lại).
 

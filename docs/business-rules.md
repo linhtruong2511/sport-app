@@ -1,4 +1,4 @@
-# Quy tắc nghiệp vụ SportHub
+# Quy tắc nghiệp vụ Thể thao 88
 
 Bản tóm tắt có thẩm quyền để code và test. Mỗi quy tắc ghi nguồn (SRS = đặc tả yêu cầu, SDD = thiết kế, R-xx = đã chốt
 trong `decisions.md`). Khi sửa code chạm vào một quy tắc ở đây, giữ hoặc bổ sung ca kiểm thử ở mục 14.
