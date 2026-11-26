@@ -164,7 +164,9 @@ export class AuthService implements TokenVerifier {
     if (user.LockedUntil !== null) {
       const lockedUntil = fromSqlDateTime(user.LockedUntil);
       if (lockedUntil.getTime() > now.getTime()) {
+        // R-17: LOGIN_MAX_FAILED / LOGIN_LOCK_MINUTES chỉnh được nên câu báo lấy theo tham số hiện hành.
         throw new AppError('ACCOUNT_TEMP_LOCKED', {
+          message: `Bạn đã nhập sai mật khẩu quá ${maxFailed} lần liên tiếp. Tài khoản bị tạm khóa trong ${lockMinutes} phút.`,
           details: { lockedUntil: toIsoVn(lockedUntil) },
         });
       }

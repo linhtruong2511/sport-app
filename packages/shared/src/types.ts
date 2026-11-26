@@ -263,3 +263,23 @@ export interface ReceiptDto {
   startAt: string;
   endAt: string;
 }
+
+// R-17 · EXT-01..04: cơ sở trong màn quản trị của Chủ sân (kèm thông tin ngân hàng + số liệu ràng buộc).
+export interface AdminBranchDto extends BranchDto {
+  courtCount: number;
+  activeStaffCount: number;
+  /** Đơn PENDING_PAYMENT / CONFIRMED / IN_USE — > 0 thì không ngừng hoạt động được. */
+  activeBookingCount: number;
+  /** Yêu cầu QR còn PENDING và chưa hết hạn — đổi STK lúc này thì tiền vào STK cũ sẽ cần đối soát tay. */
+  pendingPaymentRequestCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// R-17 · EXT-05/06
+export interface SystemSettingDto {
+  key: string;
+  value: number;
+  description: string | null;
+  updatedAt: string;
+}

@@ -24,6 +24,7 @@ nút thao tác lấy từ API (`/bookings/quote`, `/availability`, `/cancel-prev
 | `/owner/courts` | MH.11.1/2/3 Sân, khóa sân, giờ mở cửa (tab) | OWNER | StaffLayout |
 | `/owner/reports` | MH.13 Báo cáo (trái) + MH.12 Khuyến mãi (phải) | OWNER | StaffLayout |
 | `/owner/reconciliation` | MH.14 Đối soát & hoàn tiền | OWNER | StaffLayout |
+| `/owner/settings` | Cấu hình hệ thống: cơ sở + STK nhận tiền, tham số `SystemSettings` (tab) — R-17 | OWNER | StaffLayout |
 
 Sau đăng nhập: CUSTOMER → `/` (hoặc trang trước đó), STAFF → `/staff/booking`, OWNER → `/owner/staff`.
 

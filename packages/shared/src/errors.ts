@@ -102,6 +102,19 @@ export const ERROR_CATALOG = {
     status: 409,
     defaultMessage: 'Tên sân đã tồn tại trong cơ sở này.',
   },
+  BRANCH_CODE_DUPLICATE: {
+    status: 409,
+    defaultMessage: 'Mã cơ sở đã tồn tại.',
+  },
+  BRANCH_BANK_ACCOUNT_DUPLICATE: {
+    status: 409,
+    defaultMessage: 'Số tài khoản này đã được dùng cho một cơ sở khác.',
+  },
+  BRANCH_HAS_ACTIVE_BOOKINGS: {
+    status: 409,
+    defaultMessage:
+      'Cơ sở còn đơn đặt sân đang hiệu lực, vui lòng xử lý hết các đơn trước khi ngừng hoạt động.',
+  },
   PROMO_CODE_DUPLICATE: {
     status: 409,
     defaultMessage: 'Mã khuyến mãi đã tồn tại.',

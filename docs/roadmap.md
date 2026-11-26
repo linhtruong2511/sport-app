@@ -143,3 +143,5 @@ Chốt trước: **Q-01** (data access), **Q-13** (stack: `backend/` đang dùng
 | API-72 `GET /refunds` | [x] Xong (25/11/2026) | Danh sách hoàn tiền (OWNER) |
 | API-73 `POST /refunds/:refundId/complete` & `/fail` | [x] Xong (25/11/2026) | `REFUND_ALREADY_PROCESSED`, thông báo khách khi hoàn |
 | Webhook `POST /webhooks/bank/:provider` | [x] Xong (25/11/2026) | SePay Apikey, `UPDLOCK`, idempotent, khớp chính xác / `NEEDS_REVIEW` |
+| EXT-01..04 `/admin/branches` (R-17) | [x] Xong (26/11/2026) | Quản lý cơ sở + STK nhận tiền; `BRANCH_CODE_DUPLICATE`, `BRANCH_BANK_ACCOUNT_DUPLICATE`, `BRANCH_HAS_ACTIVE_BOOKINGS` |
+| EXT-05/06 `/admin/settings` (R-17) | [x] Xong (26/11/2026) | 10 tham số `SystemSettings`, min/max + ràng buộc chéo, bỏ cache sau commit |

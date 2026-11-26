@@ -22,6 +22,8 @@ const CONSTRAINT_ERROR_MAP: ReadonlyArray<{ constraint: string; code: ErrorCode 
   { constraint: 'UX_Users_Email', code: 'EMAIL_TAKEN' },
   { constraint: 'UQ_Courts_Branch_Name', code: 'COURT_NAME_DUPLICATE' },
   { constraint: 'UQ_Promotions_Code', code: 'PROMO_CODE_DUPLICATE' },
+  { constraint: 'UQ_Branches_Code', code: 'BRANCH_CODE_DUPLICATE' },
+  { constraint: 'UX_Branches_BankAccountNo', code: 'BRANCH_BANK_ACCOUNT_DUPLICATE' },
 ];
 
 export function getSqlErrorNumber(err: unknown): number | undefined {
