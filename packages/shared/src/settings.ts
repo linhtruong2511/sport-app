@@ -14,6 +14,13 @@ export const SYSTEM_SETTING_GROUP_LABELS: Record<SystemSettingGroup, string> = {
   SECURITY: 'Bảo mật đăng nhập',
 };
 
+export const SYSTEM_SETTING_GROUP_DESCRIPTIONS: Record<SystemSettingGroup, string> = {
+  BOOKING: 'Thời gian khách có để thanh toán và thời điểm hệ thống nhắc lịch.',
+  CHECKIN: 'Quy định về giờ nhận sân và khi nào khách bị tính là không đến.',
+  REFUND: 'Khách hủy đơn sớm hay muộn sẽ được hoàn bao nhiêu tiền. Tiền cọc không được hoàn.',
+  SECURITY: 'Giới hạn đăng nhập sai để chống dò mật khẩu.',
+};
+
 export const SYSTEM_SETTING_KEYS = [
   'BOOKING_HOLD_MINUTES',
   'QR_EXPIRE_MINUTES',
@@ -42,8 +49,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'BOOKING_HOLD_MINUTES',
     group: 'BOOKING',
-    label: 'Thời hạn giữ chỗ chờ thanh toán',
-    hint: 'Đơn Chờ thanh toán quá thời hạn này sẽ tự hủy và nhả sân (UC 004). Áp dụng cho đơn tạo sau khi lưu.',
+    label: 'Thời gian giữ chỗ chờ thanh toán',
+    hint: 'Khách phải thanh toán trong thời gian này. Quá hạn, đơn tự hủy và sân được mở lại cho người khác đặt. Chỉ áp dụng cho đơn đặt sau khi lưu.',
     unit: 'phút',
     min: 5,
     max: 60,
@@ -51,8 +58,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'QR_EXPIRE_MINUTES',
     group: 'BOOKING',
-    label: 'Hiệu lực mã QR tại quầy',
-    hint: 'Không được vượt quá thời hạn giữ chỗ (UC 012).',
+    label: 'Thời gian hiệu lực của mã QR',
+    hint: 'Sau thời gian này mã QR chuyển khoản hết hạn và khách cần tạo mã mới. Không được dài hơn thời gian giữ chỗ.',
     unit: 'phút',
     min: 1,
     max: 60,
@@ -60,8 +67,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'REMINDER_BEFORE_MINUTES',
     group: 'BOOKING',
-    label: 'Gửi nhắc lịch trước giờ chơi',
-    hint: 'Thông báo nhắc lịch gửi tới khách trước giờ bắt đầu (FR 11).',
+    label: 'Nhắc lịch trước giờ chơi',
+    hint: 'Hệ thống gửi thông báo nhắc khách trước giờ bắt đầu chơi khoảng thời gian này.',
     unit: 'phút',
     min: 15,
     max: 1440,
@@ -69,8 +76,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'CHECKIN_EARLY_MINUTES',
     group: 'CHECKIN',
-    label: 'Cho phép nhận sân sớm',
-    hint: 'Nhân viên được nhận sân sớm nhất trước giờ chơi bao nhiêu phút (R-12).',
+    label: 'Cho nhận sân sớm tối đa',
+    hint: 'Nhân viên chỉ được cho khách nhận sân sớm hơn giờ đặt trong khoảng thời gian này. Nhập 0 nếu chỉ cho nhận sân từ đúng giờ bắt đầu.',
     unit: 'phút',
     min: 0,
     max: 120,
@@ -78,8 +85,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'NO_SHOW_GRACE_MINUTES',
     group: 'CHECKIN',
-    label: 'Thời gian chờ trước khi tính không đến',
-    hint: 'Quá giờ bắt đầu bao nhiêu phút mà khách chưa nhận sân thì xử lý no-show (UC 007, R-04).',
+    label: 'Chờ khách trước khi tính không đến',
+    hint: 'Quá giờ bắt đầu khoảng thời gian này mà khách vẫn chưa nhận sân thì đơn bị tính là khách không đến.',
     unit: 'phút',
     min: 5,
     max: 240,
@@ -87,8 +94,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'REFUND_FULL_DAYS',
     group: 'REFUND',
-    label: 'Hủy trước từ N ngày: hoàn 100%',
-    hint: 'Hủy trước giờ chơi từ số ngày này trở lên được hoàn toàn bộ phần đã trả trừ tiền cọc (FR 12).',
+    label: 'Hoàn toàn bộ nếu hủy trước giờ chơi',
+    hint: 'Khách hủy sớm hơn giờ chơi từ số ngày này trở lên được hoàn 100% số tiền đã trả (trừ tiền cọc).',
     unit: 'ngày',
     min: 1,
     max: 60,
@@ -96,8 +103,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'REFUND_HALF_DAYS',
     group: 'REFUND',
-    label: 'Hủy trước từ N ngày: hoàn một phần',
-    hint: 'Phải nhỏ hơn mốc hoàn 100%. Hủy muộn hơn mốc này không được hoàn (FR 12).',
+    label: 'Hoàn một phần nếu hủy trước giờ chơi',
+    hint: 'Hủy trong khoảng từ mốc này đến mốc hoàn toàn bộ thì được hoàn một phần. Hủy muộn hơn mốc này không được hoàn tiền. Phải nhỏ hơn mốc hoàn toàn bộ.',
     unit: 'ngày',
     min: 0,
     max: 59,
@@ -105,8 +112,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'REFUND_HALF_RATE',
     group: 'REFUND',
-    label: 'Tỷ lệ hoàn ở mốc hoàn một phần',
-    hint: 'Phần trăm được hoàn khi hủy trong khoảng giữa hai mốc (FR 12).',
+    label: 'Tỷ lệ hoàn một phần',
+    hint: 'Phần trăm số tiền đã trả (trừ tiền cọc) được hoàn khi khách hủy trong khoảng giữa hai mốc trên.',
     unit: '%',
     min: 0,
     max: 100,
@@ -114,8 +121,8 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
   {
     key: 'LOGIN_MAX_FAILED',
     group: 'SECURITY',
-    label: 'Số lần sai mật khẩu liên tiếp tối đa',
-    hint: 'Vượt quá số lần này tài khoản bị khóa tạm (UC 001 luồng 2b).',
+    label: 'Số lần nhập sai mật khẩu tối đa',
+    hint: 'Nhập sai liên tiếp quá số lần này thì tài khoản bị khóa tạm thời.',
     unit: 'lần',
     min: 3,
     max: 20,
@@ -124,7 +131,7 @@ export const SYSTEM_SETTING_DEFS: readonly SystemSettingDef[] = [
     key: 'LOGIN_LOCK_MINUTES',
     group: 'SECURITY',
     label: 'Thời gian khóa tạm tài khoản',
-    hint: 'Thời gian tài khoản bị khóa sau khi sai mật khẩu quá số lần cho phép (UC 001 luồng 2b).',
+    hint: 'Sau thời gian này tài khoản tự động được mở khóa để đăng nhập lại.',
     unit: 'phút',
     min: 1,
     max: 1440,
@@ -178,7 +185,7 @@ export function validateSettingsCrossRules(
   if (hold !== undefined && qr !== undefined && qr > hold) {
     out.push({
       field: 'QR_EXPIRE_MINUTES',
-      message: 'Hiệu lực mã QR tại quầy không được vượt quá thời hạn giữ chỗ.',
+      message: 'Thời gian hiệu lực của mã QR không được dài hơn thời gian giữ chỗ.',
     });
   }
   const full = values.REFUND_FULL_DAYS;
@@ -186,7 +193,7 @@ export function validateSettingsCrossRules(
   if (full !== undefined && half !== undefined && half >= full) {
     out.push({
       field: 'REFUND_HALF_DAYS',
-      message: 'Mốc hoàn một phần phải nhỏ hơn mốc hoàn 100%.',
+      message: 'Mốc hoàn một phần phải nhỏ hơn mốc hoàn toàn bộ.',
     });
   }
   return out;

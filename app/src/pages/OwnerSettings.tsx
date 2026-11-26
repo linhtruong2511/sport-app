@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import {
   SYSTEM_SETTING_DEFS,
   SYSTEM_SETTING_GROUPS,
+  SYSTEM_SETTING_GROUP_DESCRIPTIONS,
   SYSTEM_SETTING_GROUP_LABELS,
   VIETQR_BANKS,
   type SystemSettingDto,
@@ -362,8 +363,8 @@ function BranchesTab() {
         </div>
 
         <div className="hint" style={{ lineHeight: '16px' }}>
-          🏦 Số tài khoản của mỗi cơ sở dùng để sinh mã VietQR và đối chiếu giao dịch SePay, vì vậy hai cơ sở
-          không được dùng chung một số tài khoản. Giờ mở cửa, ngày nghỉ và danh sách sân chỉnh tại{' '}
+          🏦 Số tài khoản của mỗi cơ sở dùng để tạo mã QR thanh toán và tự đối chiếu tiền khách chuyển, vì vậy
+          hai cơ sở không được dùng chung một số tài khoản. Giờ mở cửa, ngày nghỉ và danh sách sân chỉnh tại{' '}
           <Link to="/owner/courts" className="link-btn">
             Quản lý sân bãi
           </Link>
@@ -537,7 +538,7 @@ function BranchesTab() {
                   >
                     ⚠ Cơ sở đang có {editing?.pendingPaymentRequestCount} mã QR chưa hết hạn sinh theo số tài
                     khoản cũ. Nếu khách vẫn chuyển vào tài khoản cũ, giao dịch sẽ không tự xác nhận mà chuyển
-                    sang màn Đối soát để xử lý tay.
+                    sang màn Đối soát & Hoàn tiền để xử lý thủ công.
                   </div>
                 )}
               </div>
@@ -723,66 +724,97 @@ function SettingsForm({ settings }: { settings: SystemSettingDto[] }) {
 
   return (
     <form noValidate className="col g16" onSubmit={(e) => void handleSave(e)}>
-      {SYSTEM_SETTING_GROUPS.map((group) => (
-        <section key={group} className="card col g14">
-          <h2 className="t14 w800 c-ink">{SYSTEM_SETTING_GROUP_LABELS[group]}</h2>
+      <section className="card col" style={{ padding: 0, gap: 0 }}>
+        {SYSTEM_SETTING_GROUPS.map((group, gi) => (
           <div
+            key={group}
+            className="col g16"
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: 16,
+              padding: '20px 24px',
+              borderTop: gi === 0 ? undefined : '1px solid var(--s200)',
             }}
           >
-            {SYSTEM_SETTING_DEFS.filter((d) => d.group === group).map((def) => {
-              const isChanged = def.key in changed;
-              return (
-                <div key={def.key} className="col" style={{ gap: 4 }}>
-                  <label className="label" htmlFor={`setting-${def.key}`}>
-                    {def.label}
-                  </label>
-                  <div className="row g8" style={{ alignItems: 'center' }}>
-                    <input
-                      id={`setting-${def.key}`}
-                      data-testid={`setting-${def.key}`}
-                      className="input sm bold mono"
-                      type="number"
-                      inputMode="numeric"
-                      min={def.min}
-                      max={def.max}
-                      step={1}
-                      style={{
-                        width: 110,
-                        borderColor: isChanged ? 'var(--brand-400)' : undefined,
-                      }}
-                      value={draft[def.key] ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setDraft((d) => ({ ...d, [def.key]: v }));
-                        setFieldErr((x) => {
-                          if (!x[def.key]) return x;
-                          const next = { ...x };
-                          delete next[def.key];
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="t12 w700 c-s600">{def.unit}</span>
+            <div className="col" style={{ gap: 2 }}>
+              <h2 className="t14 w800 c-ink">{SYSTEM_SETTING_GROUP_LABELS[group]}</h2>
+              <span className="t12 c-s600">{SYSTEM_SETTING_GROUP_DESCRIPTIONS[group]}</span>
+            </div>
+            <div className="col" style={{ gap: 0 }}>
+              {SYSTEM_SETTING_DEFS.filter((d) => d.group === group).map((def, i) => {
+                const isChanged = def.key in changed;
+                return (
+                  <div
+                    key={def.key}
+                    className="row between g16 wrap"
+                    style={{
+                      alignItems: 'flex-start',
+                      padding: '14px 0',
+                      borderTop: i === 0 ? undefined : '1px dashed var(--s200)',
+                    }}
+                  >
+                    <div className="col" style={{ gap: 4, flex: '1 1 320px', maxWidth: 620 }}>
+                      <label className="label" style={{ margin: 0 }} htmlFor={`setting-${def.key}`}>
+                        {def.label}
+                      </label>
+                      <span className="t12 c-s600" style={{ lineHeight: '16px' }}>
+                        {def.hint}
+                      </span>
+                    </div>
+                    <div className="col" style={{ gap: 4, alignItems: 'flex-end', minWidth: 170 }}>
+                      <div className="row g8" style={{ alignItems: 'center' }}>
+                        <input
+                          id={`setting-${def.key}`}
+                          data-testid={`setting-${def.key}`}
+                          className="input sm bold mono"
+                          type="number"
+                          inputMode="numeric"
+                          min={def.min}
+                          max={def.max}
+                          step={1}
+                          style={{
+                            width: 100,
+                            textAlign: 'right',
+                            borderColor: isChanged ? 'var(--brand-400)' : undefined,
+                          }}
+                          value={draft[def.key] ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setDraft((d) => ({ ...d, [def.key]: v }));
+                            setFieldErr((x) => {
+                              if (!x[def.key]) return x;
+                              const next = { ...x };
+                              delete next[def.key];
+                              return next;
+                            });
+                          }}
+                        />
+                        <span className="t12 w700 c-s600" style={{ minWidth: 32 }}>
+                          {def.unit}
+                        </span>
+                      </div>
+                      <span className="t12 c-s600">
+                        Từ {def.min} đến {def.max} {def.unit}
+                      </span>
+                      {fieldErr[def.key] && (
+                        <p className="field-err" style={{ textAlign: 'right' }}>
+                          {fieldErr[def.key]}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <span className="t12 c-s600" style={{ lineHeight: '16px' }}>
-                    {def.hint} (Cho phép {def.min}–{def.max})
-                  </span>
-                  {fieldErr[def.key] && <p className="field-err">{fieldErr[def.key]}</p>}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </section>
-      ))}
+        ))}
+      </section>
 
-      <section className="card row between wrap g12" style={{ padding: 16 }}>
+      <section
+        className="card row between wrap g12"
+        style={{ padding: 16, position: 'sticky', bottom: 12, zIndex: 5, boxShadow: 'var(--shadow-md)' }}
+      >
         <span className="t12 c-s600">
           {lastUpdated ? `Cập nhật gần nhất: ${formatDateTimeVn(lastUpdated)}. ` : ''}
-          Thay đổi áp dụng ngay cho các thao tác sau khi lưu; đơn đã tạo giữ nguyên hạn giữ chỗ cũ.
+          Thay đổi có hiệu lực ngay sau khi lưu. Đơn đã đặt trước đó vẫn giữ thời gian giữ chỗ cũ.
         </span>
         <div className="row g8">
           <button
