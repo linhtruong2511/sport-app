@@ -16,7 +16,7 @@ import iBookingA from './assets/icons/nav-booking-active.svg';
 import iBooking from './assets/icons/nav-booking.svg';
 import iCourtsA from './assets/icons/nav-courts-active.svg';
 import iCourts from './assets/icons/nav-courts.svg';
-import iExternal from './assets/icons/nav-external.svg';
+import iExit from './assets/icons/nav-exit.svg';
 import iOrdersA from './assets/icons/nav-orders-active.svg';
 import iOrders from './assets/icons/nav-orders.svg';
 import iPromoA from './assets/icons/nav-promo-active.svg';
@@ -488,8 +488,8 @@ export function StaffLayout() {
           <div className="side-sec">
             <div className="side-title">Kênh khách hàng</div>
             <Link to="/" className="side-item">
-              <img src={iExternal} alt="" />
-              <span>{isOwner ? 'Giao diện Khách đặt sân' : 'Quay lại'}</span>
+              <img src={iExit} alt="" />
+              <span>Ra giao diện khách</span>
             </Link>
           </div>
         </nav>
