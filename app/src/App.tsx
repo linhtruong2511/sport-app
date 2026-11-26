@@ -10,6 +10,7 @@ const Login = lazy(() => import('./pages/Login.tsx'));
 const MyBookings = lazy(() => import('./pages/MyBookings.tsx'));
 const OwnerCourts = lazy(() => import('./pages/OwnerCourts.tsx'));
 const OwnerReports = lazy(() => import('./pages/OwnerReports.tsx'));
+const OwnerSettings = lazy(() => import('./pages/OwnerSettings.tsx'));
 const OwnerStaff = lazy(() => import('./pages/OwnerStaff.tsx'));
 const Payment = lazy(() => import('./pages/Payment.tsx'));
 const Reconciliation = lazy(() => import('./pages/Reconciliation.tsx'));
@@ -77,6 +78,7 @@ export default function App() {
               <Route path="owner/courts" element={<OwnerCourts />} />
               <Route path="owner/reports" element={<OwnerReports />} />
               <Route path="owner/reconciliation" element={<Reconciliation />} />
+              <Route path="owner/settings" element={<OwnerSettings />} />
             </Route>
           </Route>
         </Route>

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AdminCourtsModule } from './admin/courts/admin-courts.module.js';
 import { AdminPromotionsModule } from './admin/promotions/admin-promotions.module.js';
+import { AdminBranchesModule } from './admin/branches/admin-branches.module.js';
+import { AdminSettingsModule } from './admin/settings/admin-settings.module.js';
 import { AdminStaffModule } from './admin/staff/admin-staff.module.js';
 import { AffectedBookingsModule } from './affected-bookings/affected-bookings.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -41,6 +43,8 @@ import { ReportsModule } from './reports/reports.module.js';
     AdminCourtsModule,
     AdminStaffModule,
     AdminPromotionsModule,
+    AdminBranchesModule,
+    AdminSettingsModule,
     DashboardModule,
     ReportsModule,
     ReconciliationModule,

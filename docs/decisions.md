@@ -102,6 +102,27 @@ SDD 3.5a: `EffectiveFrom ≤ thời điểm tạo đơn < EffectiveTo`, không t
   Không thêm trường mới vào DTO. Màn thanh toán (MH.05) của đơn `PENDING_PAYMENT` tự hiển thị "Còn lại khi nhận sân" = `totalAmount − amountDueNow`;
   đây là ngoại lệ có chủ đích với nguyên tắc "FE không tính tiền", chỉ áp dụng cho dòng hiển thị này.
 
+### R-17. Chủ sân tự quản lý cơ sở và tham số hệ thống (mở rộng ngoài 73 API của SDD)
+> **Trạng thái:** chủ dự án chốt ngày 26/11/2026. SDD không có API sửa `Branches` / `SystemSettings`; các API dưới đây đánh mã `EXT-xx`.
+- **API (OWNER):** EXT-01 `GET /admin/branches` · EXT-02 `POST /admin/branches` · EXT-03 `PUT /admin/branches/{branchId}` ·
+  EXT-04 `POST /admin/branches/{branchId}/deactivate|activate` · EXT-05 `GET /admin/settings` · EXT-06 `PUT /admin/settings`.
+  Màn hình `/owner/settings` "Cấu hình hệ thống" gồm 2 tab: *Cơ sở & Tài khoản nhận tiền* và *Tham số hệ thống*.
+- **Cơ sở.** Mã cơ sở (`Code`) bất biến sau khi tạo. Tạo mới kèm 7 dòng `BranchOpeningHours` 06:00–22:00 trong cùng transaction
+  (chỉnh lại ở MH.11.3). Không xóa cứng; ngừng hoạt động = `Status = 'INACTIVE'`.
+  **Ngừng hoạt động bị chặn** khi cơ sở còn đơn `PENDING_PAYMENT`/`CONFIRMED`/`IN_USE` → `409 BRANCH_HAS_ACTIVE_BOOKINGS`
+  (`details.activeBookingCount`). Chủ sân xử lý hết đơn (hoặc khóa sân → UC 021) rồi mới ngừng.
+- **Tài khoản nhận chuyển khoản.** Chọn ngân hàng từ `VIETQR_BANKS` (`@sporthub/shared`) hoặc "Khác" + BIN 6 số. Bốn trường
+  BIN / tên NH / STK / tên chủ TK phải đủ cả hoặc bỏ trống cả. Webhook xác định cơ sở theo STK nên **STK là duy nhất giữa các cơ sở**:
+  migration 005 `UX_Branches_BankAccountNo` (filtered unique) → `409 BRANCH_BANK_ACCOUNT_DUPLICATE`.
+  `PaymentRequest` không lưu STK: đổi STK khi còn QR chưa hết hạn thì tiền chuyển vào STK cũ sẽ **không tự khớp** mà vào
+  `NEEDS_REVIEW` (đúng bất biến 9). Giao diện cảnh báo số QR còn hạn (`pendingPaymentRequestCount`) trước khi lưu.
+- **Tham số.** Sửa được cả 10 khóa trong `SYSTEM_SETTING_DEFS` (`packages/shared/src/settings.ts`, có min/max từng khóa) với ràng buộc chéo
+  `QR_EXPIRE_MINUTES ≤ BOOKING_HOLD_MINUTES` và `REFUND_HALF_DAYS < REFUND_FULL_DAYS`, kiểm tra trên bộ giá trị **sau khi gộp** → `400 VALIDATION_ERROR`
+  với `details[].field = values.<KEY>`. Lưu xong gọi `SettingsService.invalidate()` sau commit để có hiệu lực ngay (PM2 1 instance — R-13).
+  Hiệu lực: hạn giữ chỗ/QR áp dụng cho đơn/QR tạo sau khi lưu (đã ghi vào `HoldExpireAt`/`ExpiresAt`); mốc hoàn tiền, no-show,
+  nhận sân sớm, khóa đăng nhập áp dụng theo giá trị **tại thời điểm thao tác** (như hành vi hiện có). Câu báo khóa tạm đăng nhập lấy số lần/phút theo tham số hiện hành.
+- Mọi thao tác ghi `AuditLogs` (`CREATE_BRANCH`, `UPDATE_BRANCH`, `DEACTIVATE_BRANCH`, `ACTIVATE_BRANCH`, `UPDATE_SETTINGS`).
+
 ---
 
 ## Các mục Q-xx đã triển khai theo mặc định (lưu vết tham chiếu)

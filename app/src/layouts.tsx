@@ -21,6 +21,8 @@ import iOrdersA from './assets/icons/nav-orders-active.svg';
 import iOrders from './assets/icons/nav-orders.svg';
 import iPromoA from './assets/icons/nav-promo-active.svg';
 import iPromo from './assets/icons/nav-promo.svg';
+import iSettingsA from './assets/icons/nav-settings-active.svg';
+import iSettings from './assets/icons/nav-settings.svg';
 import iStaffA from './assets/icons/nav-staff-active.svg';
 import iStaff from './assets/icons/nav-staff.svg';
 import iStatsA from './assets/icons/nav-stats-active.svg';
@@ -335,6 +337,10 @@ const META: Record<string, { title: string; desc: string }> = {
     title: 'Đối soát giao dịch & Hoàn tiền chờ xử lý',
     desc: 'Xử lý các giao dịch chuyển khoản sai tiền, sai nội dung, trễ hạn và các khoản hoàn tiền sau khi khách hủy đơn',
   },
+  '/owner/settings': {
+    title: 'Cấu hình hệ thống & Quản lý cơ sở',
+    desc: 'Thêm, sửa, ngừng hoạt động cơ sở, cập nhật tài khoản nhận chuyển khoản và các tham số như thời gian giữ chỗ, nhận sân, hoàn tiền',
+  },
 };
 
 export interface StaffOutlet {
@@ -471,6 +477,12 @@ export function StaffLayout() {
                 icon={iOrders}
                 iconActive={iOrdersA}
               />
+              <SideItem
+                to="/owner/settings"
+                label="Cấu hình hệ thống"
+                icon={iSettings}
+                iconActive={iSettingsA}
+              />
             </div>
           )}
           <div className="side-sec">
@@ -505,7 +517,8 @@ export function StaffLayout() {
             <p className="t12 c-s600">{meta.desc}</p>
           </div>
           <div className="row g12">
-            {isOwner ? (
+            {/* Trang cấu hình quản lý mọi cơ sở — không cần bộ chọn chi nhánh */}
+            {isOwner && loc.pathname === '/owner/settings' ? null : isOwner ? (
               <div className="row g8">
                 <span className="t12 w600 c-s600">Chi nhánh:</span>
                 <select

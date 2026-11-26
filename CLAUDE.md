@@ -42,7 +42,7 @@ Gặp mâu thuẫn **chưa có** trong `decisions.md`: dừng lại, hỏi ngư�
 app/               React SPA (12 màn hình nối API thật) — xem app/CLAUDE.md, app/README.md
 backend/           Backend NestJS 12 (SQL Server) — xem backend/CLAUDE.md, backend/README.md
 packages/shared/   Enum, nhãn tiếng Việt, mã lỗi ERROR_CATALOG, kiểu DTO, zod schema dùng chung FE/BE
-database/          sporthub_init.sql + migrations/ (001..004) + scripts/ (backup/restore)
+database/          sporthub_init.sql + migrations/ (001..005) + scripts/ (backup/restore)
 deploy/            nginx.conf + runbook vận hành production Linux (deploy/README.md)
 e2e/               Bộ kiểm thử E2E Playwright (chạy với Backend + SportHub_Test) — xem e2e/README.md
 docs/              Tài liệu ràng buộc, SRS.md, SDD.md, images/, specs/README.md

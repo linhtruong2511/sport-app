@@ -111,6 +111,10 @@ Quyền: `PUBLIC`, `PUBLIC*` (token tùy chọn), `AUTH`, `CUSTOMER`, `STAFF+` (
 
 **reports** (OWNER) — 66 `GET /reports/revenue`
 
+**admin – cơ sở & tham số hệ thống** (OWNER, mở rộng ngoài SDD — R-17) — EXT-01 `GET /admin/branches` · EXT-02 `POST /admin/branches` ·
+EXT-03 `PUT /admin/branches/{branchId}` · EXT-04 `POST /admin/branches/{branchId}/deactivate|activate` ·
+EXT-05 `GET /admin/settings` · EXT-06 `PUT /admin/settings`
+
 **reconciliation / refunds** — 67 `GET /reconciliation/transactions` STAFF+ · 68 `GET …/{bankTxnId}/candidates` STAFF+ ·
 69 `POST …/{bankTxnId}/match` STAFF+ · 70 `POST …/{bankTxnId}/refund-to-customer` STAFF+ · 71 `POST …/{bankTxnId}/ignore` STAFF+ ·
 72 `GET /refunds` OWNER · 73 `POST /refunds/{refundId}/complete|fail` OWNER
