@@ -197,26 +197,31 @@ table { border-collapse: collapse; width: 100%; }
 /* ===== Layout nhân viên / chủ sân ===== */
 .staff-shell { display: flex; min-height: 100vh; align-items: stretch; }
 .sidebar {
-  width: 256px; flex: none; background: var(--s900); color: #fff; display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh;
+  width: 256px; flex: none; background: #fff; color: var(--s800); border-right: 1px solid var(--s200);
+  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
 }
-.side-logo { height: 64px; padding: 0 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--s800); flex: none; }
+.side-logo { height: 64px; padding: 0 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--s200); flex: none; }
 .side-logo .mk {
   width: 36px; height: 36px; border-radius: 10px; flex: none; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
 }
 .side-menu { flex: 1; overflow: auto; padding: 20px 12px; display: flex; flex-direction: column; gap: 20px; }
 .side-sec { display: flex; flex-direction: column; gap: 4px; }
-.side-sec + .side-sec { border-top: 1px solid var(--s800); padding-top: 16px; }
-.side-title { padding: 0 12px 8px; font-size: 11px; line-height: 16.5px; font-weight: 700; letter-spacing: .55px; text-transform: uppercase; color: var(--s400); }
-.side-title.gold { color: var(--amber-400); }
-.side-item { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; color: var(--s300); font-size: 14px; line-height: 20px; font-weight: 500; }
-.side-item:hover { background: var(--s800); }
-.side-item.active { background: var(--brand-600); color: #fff; font-weight: 700; box-shadow: var(--shadow-sm); }
-.side-item img { width: 20px; height: 20px; flex: none; }
-.side-user { flex: none; background: rgba(2, 6, 23, .6); border-top: 1px solid var(--s800); padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.side-exit { background: var(--s800); color: var(--s200); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
-.side-exit:hover { background: #334155; }
+.side-sec + .side-sec { border-top: 1px solid var(--s200); padding-top: 16px; }
+.side-title { padding: 0 12px 8px; font-size: 11px; line-height: 16.5px; font-weight: 700; letter-spacing: .55px; text-transform: uppercase; color: var(--s500); }
+.side-title.gold { color: var(--amber-800); }
+.side-item {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px;
+  color: var(--s700); font-size: 14px; line-height: 20px; font-weight: 500;
+  transition: background .15s, color .15s;
+}
+.side-item:hover { background: var(--s100); color: var(--s900); }
+.side-item.active { background: var(--brand-700); color: #fff; font-weight: 700; box-shadow: var(--shadow-sm); }
+.side-item img { width: 20px; height: 20px; flex: none; filter: brightness(0.42) contrast(1.1); }
+.side-item.active img { filter: none; }
+.side-user { flex: none; background: var(--s50); border-top: 1px solid var(--s200); padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.side-exit { background: #fff; border: 1px solid var(--s300); color: var(--s700); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; }
+.side-exit:hover { background: var(--s100); color: var(--s900); }
 .work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   height: 64px; background: #fff; border-bottom: 1px solid var(--s300); display: flex; align-items: center;
@@ -228,7 +233,8 @@ table { border-collapse: collapse; width: 100%; }
 /* ===== Bảng ===== */
 .tbl-wrap { width: 100%; overflow-x: auto; }
 .tbl thead th {
-  background: var(--s800); color: #fff; font-size: 12px; line-height: 16px; font-weight: 700; text-align: left; padding: 12px;
+  background: var(--s100); color: var(--s800); border-bottom: 1px solid var(--s300);
+  font-size: 12px; line-height: 16px; font-weight: 700; text-align: left; padding: 12px;
 }
 .tbl thead th.r, .tbl td.r { text-align: right; }
 .tbl tbody td { padding: 14px 12px; vertical-align: middle; font-size: 12px; line-height: 16px; border-top: 1px solid var(--s300); }
@@ -240,16 +246,23 @@ table { border-collapse: collapse; width: 100%; }
 
 /* ===== Lưới lịch ===== */
 /* Mỗi cột giờ có bề rộng tối thiểu; bảng dài hơn khung thì cuộn ngang trong .tbl-wrap, cột "Sân" dính bên trái. */
-.sched { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; border: 1px solid var(--s300); border-radius: 12px; }
-.sched th { background: var(--s800); color: #fff; padding: 10px 6px; text-align: center; font-size: 12px; font-weight: 700; border-left: 1px solid var(--s700); white-space: nowrap; }
+.sched { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: auto; border: 1px solid var(--s300); border-radius: 12px; overflow: hidden; }
+.sched th {
+  background: var(--brand-50); color: var(--s900); padding: 10px 6px; text-align: center; font-size: 12px; font-weight: 700;
+  border-left: 1px solid var(--s200); border-bottom: 1px solid var(--s300); white-space: nowrap;
+}
 .sched th:not(:first-child), .sched td:not(:first-child) { min-width: 96px; }
-.sched th:first-child { text-align: left; border-left: 0; padding-left: 12px; min-width: 150px; position: sticky; left: 0; z-index: 2; }
+.sched th:first-child {
+  background: var(--s100); text-align: left; border-left: 0; padding-left: 12px; min-width: 150px;
+  position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 0 var(--s300);
+}
 .sched td:first-child { position: sticky; left: 0; z-index: 1; box-shadow: 1px 0 0 var(--s300); }
 .sched .cell small { white-space: nowrap; }
-.sched th small { display: block; font-size: 10px; font-weight: 500; color: var(--s300); }
-.sched th small.peak { color: var(--brand-400); font-weight: 700; }
-.sched td { padding: 6px; border-top: 1px solid var(--s300); border-left: 1px solid var(--s300); background: #fff; vertical-align: middle; }
-.sched td:first-child { background: var(--s100); border-left: 0; padding: 10px 12px; }
+.sched th small { display: block; font-size: 10px; font-weight: 500; color: var(--s600); }
+.sched th small.peak { color: var(--brand-700); font-weight: 700; }
+.sched td { padding: 6px; border-top: 1px solid var(--s200); border-left: 1px solid var(--s200); background: #fff; vertical-align: middle; }
+.sched tbody tr:first-child td { border-top: 0; }
+.sched td:first-child { background: var(--s50); border-left: 0; padding: 10px 12px; }
 .sched td.closed { background: var(--s200); color: var(--s500); text-align: center; font-size: 11px; font-weight: 700; }
 .sched td.locked { background: var(--s200); text-align: center; font-size: 11px; font-weight: 700; color: var(--s700); }
 .cell {

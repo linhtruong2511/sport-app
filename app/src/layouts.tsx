@@ -406,10 +406,10 @@ export function StaffLayout() {
             <img src="/logo-88-sports-transparent-256x256.png" alt="Logo Thể thao 88" />
           </div>
           <div className="col g4" style={{ paddingBottom: 1.5 }}>
-            <span className="t16 w800 c-white" style={{ lineHeight: '16px', letterSpacing: -0.4 }}>
+            <span className="t16 w800 c-ink" style={{ lineHeight: '16px', letterSpacing: -0.4 }}>
               Thể thao 88 POS
             </span>
-            <span className="t11 w500" style={{ color: 'var(--s400)' }}>
+            <span className="t11 w500" style={{ color: 'var(--s500)' }}>
               Quản lý & Vận hành sân
             </span>
           </div>
@@ -487,8 +487,8 @@ export function StaffLayout() {
               {initials(user.fullName)}
             </div>
             <div className="col" style={{ minWidth: 0 }}>
-              <span className="t12 w700 c-white nowrap">{user.fullName}</span>
-              <span className="t11 w500 nowrap" style={{ color: 'var(--brand-400)' }}>
+              <span className="t12 w700 c-ink nowrap">{user.fullName}</span>
+              <span className="t11 w600 nowrap" style={{ color: 'var(--brand-700)' }}>
                 {user.title}
               </span>
             </div>
